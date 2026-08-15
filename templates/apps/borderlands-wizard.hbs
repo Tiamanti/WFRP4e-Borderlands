@@ -1,0 +1,12 @@
+<form class="borderlands-wizard">
+    <ol class="borderlands-wizard__phases">
+        {{#each phases}}
+        <li class="borderlands-wizard__phase {{#if this.done}}borderlands-wizard__phase--done{{/if}}">
+            <span class="borderlands-wizard__phase-label">{{localize this.label}}</span>
+            <button type="button" data-action="runPhase" data-phase="{{this.id}}">
+                {{localize "BORDERLANDS.RunPhase"}}
+            </button>
+        </li>
+        {{/each}}
+    </ol>
+</form>

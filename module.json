@@ -1,0 +1,42 @@
+{
+  "id": "wfrp4e-borderlands",
+  "title": "[WFRP4e] Borderlands",
+  "description": "Generates Renegade Crowns-style Borderlands regions (geography, ruins, princes, relationships, settlements, hazards) via the /borderlands command.",
+  "version": "0.1.0",
+  "compatibility": {
+    "minimum": "13",
+    "verified": "14"
+  },
+  "authors": [
+    {
+      "name": "Tiamanti",
+      "flags": {}
+    }
+  ],
+  "url": "https://github.com/Tiamanti/WFRP4e-Borderlands",
+  "manifest": "https://github.com/Tiamanti/WFRP4e-Borderlands/releases/latest/download/module.json",
+  "download": "https://github.com/Tiamanti/WFRP4e-Borderlands/releases/latest/download/module.zip",
+  "esmodules": [
+    "./scripts/wfrp4e-borderlands.mjs"
+  ],
+  "styles": [
+    "./styles/wfrp4e-borderlands.css"
+  ],
+  "languages": [
+    {
+      "lang": "en",
+      "name": "English",
+      "path": "./languages/en.json"
+    }
+  ],
+  "relationships": {
+    "systems": [
+      {
+        "id": "wfrp4e",
+        "type": "system",
+        "compatibility": {}
+      }
+    ]
+  },
+  "socket": false
+}

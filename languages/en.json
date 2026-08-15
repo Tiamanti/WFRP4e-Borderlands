@@ -1,0 +1,12 @@
+{
+  "BORDERLANDS.CommandDescription": "Generate a Borderlands region (Renegade Crowns)",
+  "BORDERLANDS.GMOnly": "The /borderlands command is restricted to GMs.",
+  "BORDERLANDS.WizardTitle": "Borderlands Region Generator",
+  "BORDERLANDS.RunPhase": "Roll",
+  "BORDERLANDS.PhaseGeography": "1. Geography",
+  "BORDERLANDS.PhaseRuins": "2. Ancient Ruins",
+  "BORDERLANDS.PhasePrinces": "3. Princes",
+  "BORDERLANDS.PhaseRelationships": "4. Relationships",
+  "BORDERLANDS.PhaseSettlements": "5. Settlements",
+  "BORDERLANDS.PhaseHazards": "6. Monsters & Hazards"
+}
