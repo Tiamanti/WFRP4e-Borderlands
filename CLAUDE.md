@@ -13,14 +13,16 @@ npm test         # vitest unit tests (Node, stubs in tests/setup.mjs)
 ## Status
 
 Build tooling, `/borderlands` command, `BorderlandsWizard` app, and the six-phase pipeline
-(`src/generation/region.mjs`) are wired up. **Geography is implemented** (Table 1-1/1-2
-rolls, radiating grid placement, Scene/Drawing painting via the interactive
-`GeographyRoller` dialog — see `PLAN.md` for the design). The other five phase generators
-(`ruins.mjs`, `princes.mjs`, `relationships.mjs`, `settlements.mjs`, `hazards.mjs`) still
-throw `"not yet implemented"`. See `SPECS.md` for the rules process and table page
-references, and `DEVELOPMENT.md`'s "Filling in a generation phase" section for the
-workflow — each remaining phase gets its own `PLAN.md`-style design pass before it's
-built, the same way Geography did.
+(`src/generation/region.mjs`) are wired up. **Geography and Ancient Ruins are implemented**
+(see `PLAN.md` for both designs). Geography: Table 1-1/1-2 rolls, radiating grid placement,
+Scene/Drawing painting via the interactive `GeographyRoller` dialog. Ancient Ruins: Table
+1-3..1-8 rolls via the generic one-shot `runPhase` flow, ruins placed as scene `Note`s
+deep-linked to pages in a shared "`<Map Name>` - Ancient Ruins" JournalEntry. The remaining
+four phase generators (`princes.mjs`, `relationships.mjs`, `settlements.mjs`,
+`hazards.mjs`) still throw `"not yet implemented"`. See `SPECS.md` for the rules process
+and table page references, and `DEVELOPMENT.md`'s "Filling in a generation phase" section
+for the workflow — each remaining phase gets its own `PLAN.md`-style design pass before
+it's built, the same way Geography and Ancient Ruins did.
 
 ## Invariants
 

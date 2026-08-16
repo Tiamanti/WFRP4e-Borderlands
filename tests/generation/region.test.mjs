@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { REGION_PHASES, createRegion, runPhase } from "../../src/generation/region.mjs";
+import { REGION_PHASES, createRegion, runPhase, isPhaseDone } from "../../src/generation/region.mjs";
 
 describe("region", () => {
     it("creates an empty region with one field per phase", () => {
@@ -27,11 +27,33 @@ describe("region", () => {
 
     it("phase generators are stubbed pending table data", async () => {
         const region = createRegion();
-        await expect(runPhase(region, "ruins")).rejects.toThrow(/not yet implemented/);
+        await expect(runPhase(region, "princes")).rejects.toThrow(/not yet implemented/);
     });
 
     it("geography is driven by the Geography Roller dialog, not runPhase", async () => {
         const region = createRegion();
         await expect(runPhase(region, "geography")).rejects.toThrow(/Geography Roller/);
+    });
+
+    it("ruins requires Geography's scene to exist first", async () => {
+        const region = createRegion();
+        await expect(runPhase(region, "ruins")).rejects.toThrow(/Geography phase first/);
+    });
+
+    describe("isPhaseDone", () => {
+        it("checks geography's log, ruins' entries, and falls back to array/object-keys for the rest", () => {
+            const region = createRegion();
+            expect(isPhaseDone(region, "geography")).toBe(false);
+            expect(isPhaseDone(region, "ruins")).toBe(false);
+            expect(isPhaseDone(region, "princes")).toBe(false);
+
+            region.geography.log.push({ type: "river" });
+            region.ruins.entries.push({ type: "Dwarf" });
+            region.princes.push({});
+
+            expect(isPhaseDone(region, "geography")).toBe(true);
+            expect(isPhaseDone(region, "ruins")).toBe(true);
+            expect(isPhaseDone(region, "princes")).toBe(true);
+        });
     });
 });

@@ -1,4 +1,4 @@
-import { REGION_PHASES, createRegion, runPhase } from "../generation/region.mjs";
+import { REGION_PHASES, createRegion, runPhase, isPhaseDone } from "../generation/region.mjs";
 import GeographyRoller from "./geography-roller.mjs";
 
 const { ApplicationV2, HandlebarsApplicationMixin } = foundry.applications.api;
@@ -42,11 +42,7 @@ export default class BorderlandsWizard extends HandlebarsApplicationMixin(Applic
         context.phases = REGION_PHASES.map(phase => ({
             id: phase.id,
             label: phase.label,
-            done: phase.id === "geography"
-                ? this.region.geography.log.length > 0
-                : Array.isArray(this.region[phase.id])
-                    ? this.region[phase.id].length > 0
-                    : Object.keys(this.region[phase.id] ?? {}).length > 0,
+            done: isPhaseDone(this.region, phase.id),
         }));
         context.region = this.region;
         return context;
@@ -62,6 +58,9 @@ export default class BorderlandsWizard extends HandlebarsApplicationMixin(Applic
 
         try {
             await runPhase(this.region, phaseId);
+            if (phaseId === "ruins") {
+                game.journal.get(this.region.ruins.journalId)?.sheet.render(true);
+            }
         } catch (err) {
             ui.notifications.warn(err.message);
             console.warn("wfrp4e-borderlands |", err);
