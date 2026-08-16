@@ -947,15 +947,64 @@ Band tables, `lookupBand`-style like `tables/ruins.mjs`:
   sheet — same as Ruins' auto-open (a single journal makes sense to jump
   to here, unlike Princes' multiple Actors).
 
-### Not yet done for this phase
+### Status: implemented
 
-Design pass only, matching Geography/Ancient Ruins/Princes' pattern before
-being built — **no code for Relationships has been written yet**. Before
-implementation starts: transcribe Tables 2-12 through 2-22 with
-`-table`-mode verification (flagged above as a real misalignment risk,
-not just a precaution), and decide the "particularly old alliance" third
-reinforcement-roll threshold for real (currently a placeholder judgment
-call, 25+ years).
+All of Tables 2-12 through 2-22 were re-verified with `pdftotext -table`
+before transcription — the same one-band row-shift `-layout` misprint seen
+in Table 1-1 and Table 2-11 was confirmed again across 2-15 through 2-19,
+and the correction carried through to 2-20/2-21/2-22 as well. The
+"particularly old alliance" third reinforcement-roll threshold is applied
+at 25+ years, as planned above (`rollAllianceCause` in
+`generation/relationships.mjs`).
+
+One small implementation deviation from the design above: instead of
+reusing `princeDisplayName` at journal-render time, `relationships-chat.mjs`
+looks up `game.actors.get(princeId)?.name` directly — the Actor's `name`
+was already set via `princeDisplayName` at creation time
+(`princes-actor.mjs`), so re-deriving it from the stored prince object
+would just be redundant. Falls back to `"Unknown Prince"` if the Actor was
+deleted out from under a stored relationship.
+
+**Post-verification correction**: after a first look at the generated
+journal, the user asked for one page **per prince** instead of one page
+per relationship — a GM looking up a specific prince wants everything that
+prince is party to in one place, not scattered across N separate two-prince
+pages. `relationships-journal.mjs` was restructured: `createRelationshipsJournal`
+now takes the full prince list and the *complete* accumulated relationships
+array (not just the new batch), groups relationships by prince (matching
+either `princeAId` or `princeBId`), and builds one page per prince —
+titled with `princeDisplayName`, each relationship rendered as an `<h3>`
+subsection naming the *other* prince (e.g. "Exalted One (Priest):
+Bitterness"). Pages are keyed by a `princeId` flag rather than matched by
+name, so re-running the phase rebuilds an affected prince's page in place
+(their full relationship list, old and new together) instead of
+duplicating pages — this is why the journal builder now needs the complete
+`region.relationships.entries` list, not just each run's new relationships.
+
+**Second correction — not every nature is mutual**: the first pass put a
+relationship on *both* princes' pages unconditionally. The user caught
+that most natures aren't actually felt by both sides — Bitterness,
+Contempt, Envy, Fear, Hatred, Respect, and Vengeance are all one prince's
+feeling *about* the other (the book's own language: "the bitter prince
+wants...", "one prince thinks the other is weak..."), not something the
+target necessarily reciprocates or even knows about. Only Alliance,
+Rivalry, and War describe the state of the pair as a whole. Added
+`MUTUAL_RELATIONS = ["Alliance", "Rivalry", "War"]` (`tables/relationships.mjs`)
+and `relationshipBelongsToPrince` (`relationships-journal.mjs`): mutual
+natures land on both princes' pages, everything else lands only on
+princeA's page (the prince the relationship was rolled *for* —
+`rollSingleRelationship`'s `princeAIndex` — never their randomly-picked
+target princeB).
+
+Files: `src/tables/relationships.mjs`, `src/generation/relationships.mjs`
+(`pickRandomPartner`, `rollRelationshipCause`, `rollSingleRelationship`,
+`rollRelationships`, `generateRelationships`), `relationships-journal.mjs`,
+`relationships-chat.mjs`; wired into `region.mjs` (`relationships:
+{ journalId, entries }`, `isPhaseDone`) and `borderlands-wizard.mjs`
+(auto-opens the journal sheet after a successful run, same as Ruins).
+Tests: `tests/tables/relationships.test.mjs` (band coverage, description
+completeness), `tests/generation/relationships.test.mjs` (roll-queue traces
+for every cause dispatch branch, pairing, and the two-per-prince loop).
 
 ## Not in scope for this plan (future sessions)
 

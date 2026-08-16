@@ -11,8 +11,7 @@ function renderRuinPageHtml(ruin) {
         .map(purpose => `${purpose} (${PURPOSE_DESCRIPTIONS[purpose]})`)
         .join(" and ");
 
-    return `<h2>${ruin.type} Ruin</h2>
-<p><strong>Type</strong>: ${ruin.type} — ${RUIN_TYPE_DESCRIPTIONS[ruin.type]}</p>
+    return `<p><strong>Type</strong>: ${ruin.type} — ${RUIN_TYPE_DESCRIPTIONS[ruin.type]}</p>
 <p><strong>Ancient Menace</strong>: ${ruin.menace} — ${MENACE_DESCRIPTIONS[ruin.menace]}</p>
 <p><strong>Original Purpose</strong>: ${purposeText}</p>
 <p><strong>Reason for Ruin</strong>: ${ruin.reason} — ${REASON_DESCRIPTIONS[ruin.reason]}</p>

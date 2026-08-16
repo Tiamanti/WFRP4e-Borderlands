@@ -27,11 +27,11 @@ export function collectFeatureDescriptions(log) {
     return descriptions;
 }
 
-function renderGeographyPageHtml(region, descriptions) {
-    const items = [...descriptions.entries()]
+/** No heading repeating the page's own name/title — Foundry's journal viewer already shows that. */
+function renderGeographyPageHtml(descriptions) {
+    return [...descriptions.entries()]
         .map(([label, text]) => `<p><strong>${label}</strong> — ${text}</p>`)
         .join("");
-    return `<h2>${region.geography.sceneName} — Geography</h2>${items}`;
 }
 
 /** Creates the Geography JournalEntry (one page, one paragraph per terrain/feature type encountered). */
@@ -44,7 +44,7 @@ export async function createGeographyJournal(region) {
         folder: folder.id,
         pages: [{
             name: "Geography",
-            text: { content: renderGeographyPageHtml(region, descriptions), format: CONST.JOURNAL_ENTRY_PAGE_FORMATS.HTML },
+            text: { content: renderGeographyPageHtml(descriptions), format: CONST.JOURNAL_ENTRY_PAGE_FORMATS.HTML },
         }],
     });
     region.geography.journalId = journal.id;

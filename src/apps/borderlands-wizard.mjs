@@ -59,8 +59,8 @@ export default class BorderlandsWizard extends HandlebarsApplicationMixin(Applic
         try {
             const before = isPhaseDone(this.region, "princes") ? this.region.princes.entries.length : 0;
             await runPhase(this.region, phaseId);
-            if (phaseId === "ruins") {
-                game.journal.get(this.region.ruins.journalId)?.sheet.render(true);
+            if (phaseId === "ruins" || phaseId === "relationships") {
+                game.journal.get(this.region[phaseId].journalId)?.sheet.render(true);
             } else if (phaseId === "princes") {
                 const count = this.region.princes.entries.length - before;
                 ui.notifications.info(game.i18n.format("BORDERLANDS.PrincesGenerated", { count }));

@@ -19,9 +19,9 @@
 
 ## src/generation/
 
-Orchestration and one module per SPECS.md process. Relationships, Settlements
-and Hazards still throw `"not yet implemented"` — see `SPECS.md` → Table locations when
-filling each in. Geography, Ancient Ruins, and Princes are implemented (PLAN.md).
+Orchestration and one module per SPECS.md process. Settlements and Hazards still throw
+`"not yet implemented"` — see `SPECS.md` → Table locations when filling each in. Geography,
+Ancient Ruins, Princes, and Relationships are implemented (PLAN.md).
 
 | File | Exports | SPECS.md process |
 |------|---------|-------------------|
@@ -39,7 +39,9 @@ filling each in. Geography, Ancient Ruins, and Princes are implemented (PLAN.md)
 | `princes.mjs` | `generatePrinces`, `rollPrinces`, `convertCharacteristics` | PRINCE GENERATION SUMMARY (Tables 1-3, 2-1..2-11). `rollPrinces`/`convertCharacteristics` are pure and unit-tested; `generatePrinces` is the `runPhase`-compatible orchestrator — doesn't require a Geography scene (princes aren't placed on it, unlike Ruins) |
 | `princes-actor.mjs` | `getOrCreateActorFolder`, `createPrinceActor` | Creates the `npc` Actor per prince — linked Career/Skill/Talent Items resolved via wfrp4e's own `game.wfrp4e.utility.findExactName`/`findBaseName` (searches every compendium pack tagged with that item type, not just `wfrp4e-core`'s — this is what finds "Basic" skills like Stealth/Ride, which ship in the wfrp4e system's own pack), plus wfrp4e's standard Basic Skills set (`allBasicSkills()`, deduped against the prince's own resolved skills) so the NPC is easy to run at the table, filed into a shared "`<Map Name>`" Actor folder; `Actor.create(..., { skipItems: true })` suppresses wfrp4e's own "Add Basic Skills?" prompt, which would otherwise offer an undeduped copy of the same set — Foundry-side effects, not unit-tested per the Geography/Ruins precedent |
 | `princes-chat.mjs` | `postPrincesSummary` | Posts the newly-generated princes (type/race/career/goal/principle/style/courtiers/principality per prince) to chat as a GM-only ("selfroll") message |
-| `relationships.mjs` | `generateRelationships` | RELATIONS GENERATION SUMMARY (Tables 2-12..2-22) |
+| `relationships.mjs` | `generateRelationships`, `rollRelationships`, `rollSingleRelationship`, `rollRelationshipCause`, `pickRandomPartner` | RELATIONS GENERATION SUMMARY (Tables 2-12..2-22). Two relationships per prince, each against an independently-chosen random other prince (self excluded, repeats allowed). `generateRelationships` is the `runPhase`-compatible orchestrator (throws if fewer than 2 princes exist); the rest are pure and unit-tested |
+| `relationships-journal.mjs` | `createRelationshipsJournal` | Creates/updates "`<Map Name>` - Relationships" — one page **per prince** (not per relationship), each relationship rendered as a subsection naming the *other* prince. Alliance/Rivalry/War are mutual and appear on both princes' pages; every other nature is one prince's feeling *about* the other and appears only on the feeling prince's page, not their target's (`MUTUAL_RELATIONS`, `tables/relationships.mjs`). Pages are keyed by a `princeId` flag so a re-run rebuilds a prince's page in place instead of duplicating it — isolated from the pure logic above so that stays unit-testable |
+| `relationships-chat.mjs` | `postRelationshipsSummary` | Posts the newly-generated relationships (nature/length/cause per pair) to chat as a GM-only ("selfroll") message |
 | `settlements.mjs` | `generateSettlements` | COMMUNITIES SUMMARY (Tables 3-1, 3-2) |
 | `hazards.mjs` | `generateHazards` | HAZARDS SUMMARY (Tables 4-1..4-12) |
 
@@ -51,6 +53,7 @@ filling each in. Geography, Ancient Ruins, and Princes are implemented (PLAN.md)
 | `ruins.mjs` | `lookupBand`, `RUIN_COUNT_TABLE`, `RUIN_TYPE_TABLE`, `ANCIENT_MENACES_TABLE`, `ORIGINAL_PURPOSE_TABLE`, `REASON_FOR_RUINS_TABLE`, `AGE_OF_RUINS_TABLE`, `RUIN_TYPE_DESCRIPTIONS`, `MENACE_DESCRIPTIONS`, `PURPOSE_DESCRIPTIONS`, `REASON_DESCRIPTIONS` | Tables 1-3..1-8 data (band-range tables, not dense 1-100 arrays); every column of the 1-5/1-7 matrices sums to exactly 100, confirming the transcription |
 | `princes.mjs` | `PRINCE_TYPE_TABLE`, `PRINCE_TYPES`, `RACE_TABLE`, `isImpossibleRaceType`, `CAREER_STAGE_LEVEL_TABLE`, `CAREER_STAGE_PROGRESS_TABLE`, `GOAL_TABLE`, `PRINCIPLES_TABLE`, `STYLE_TABLE`, `SECRETS_TABLE`, `QUIRKS_TABLE`, `COURTIERS_TABLE`, `TITLE_TABLE` | Tables 2-1..2-11 data. `PRINCE_TYPES`' 7 example statblocks are hand-converted to 4e once here (career/skills/talents already 4e names) using `Conversion_Rules.pdf` as a one-time reference — see PLAN.md for why this isn't a runtime lookup. `TITLE_TABLE`'s bands were corrected from a `-layout` row-shift misprint, confirmed with `-table` mode |
 | `race-conversion.mjs` | `NEW_CHARACTERISTIC_DICE` | Just the Initiative/Dexterity generation dice (2e has neither) — race conversion is otherwise unused: princes are NPCs, and race stays narrative flavor rather than adjusting characteristics, per direction |
+| `relationships.mjs` | `DIPLOMATIC_RELATIONS_TABLE`, `RELATION_DESCRIPTIONS`, `MUTUAL_RELATIONS`, `LENGTH_OF_RELATIONS_TABLE`, `ALLIANCE_ORIGIN_TABLE`, `ALLIANCE_ORIGIN_DESCRIPTIONS`, `BITTERNESS_CAUSE_TABLE`, `CONTEMPT_CAUSE_TABLE`, `ENVY_CAUSE_TABLE`, `FEAR_CAUSE_TABLE`, `HATRED_CAUSE_TABLE`, `RESPECT_CAUSE_TABLE`, `VENGEANCE_CAUSE_TABLE`, `*_CAUSE_DESCRIPTIONS` (one per nature above), `WAR_CAUSE_TABLE`, `WAR_CAUSE_DESCRIPTIONS`, `CAUSE_TABLES`, `CAUSE_DESCRIPTIONS` | Tables 2-12..2-22 data. `MUTUAL_RELATIONS` (`["Alliance", "Rivalry", "War"]`) flags which natures describe the pair mutually vs. one prince's one-directional feeling about the other — consumed by `relationships-journal.mjs` to decide which prince's page a relationship appears on. Every d10 cause table (2-15..2-21) was re-verified with `pdftotext -table` after `-layout` mode row-shifted them by one band — the same misprint pattern already seen in Table 1-1 and Table 2-11. `CAUSE_TABLES`/`CAUSE_DESCRIPTIONS` key by Table 2-12's relation name for dispatch; Rivalry and War are deliberately absent (Rivalry has no cause table at all; War uses `WAR_CAUSE_TABLE` directly and redirects into another nature's table — see `generation/relationships.mjs`) |
 
 ## templates/
 
@@ -71,7 +74,7 @@ strings in `ruins-scene.mjs` (written once at creation time, never re-rendered).
     geography: { sceneId: null, sceneName: "Borderlands", mapSize: { width: 20, height: 20 }, journalId: null, log: [], stoppedReason: null },
     ruins: { journalId: null, entries: [] },
     princes: { entries: [] },
-    relationships: [],
+    relationships: { journalId: null, entries: [] },
     settlements: [],
     hazards: [],
 }
@@ -102,7 +105,19 @@ document type in Foundry). `race` is narrative flavor only (recorded on the Acto
 field) and doesn't feed `characteristics` — princes are NPCs, not PCs, so there's no
 per-race stat conversion, only Table 2-1's baseline plus freshly-rolled Initiative/Dexterity.
 
-For the remaining three phases: each `generate*` function receives the region built so far
-(so later phases can react to earlier results — e.g. relationships need `region.princes`)
-and returns the fields it produced; `runPhase` merges the result back into the region
-object in place.
+`region.relationships.entries` accumulates one object per relationship (`{ princeAId,
+princeBId, nature, length, cause }`, using each prince's Actor id rather than an array
+index, so entries stay valid even if `region.princes.entries` gets reordered) each time
+Relationships runs — two per prince, each against an independently-chosen random other
+prince (self excluded, repeats allowed across a prince's own two rolls and across other
+princes' rolls). `cause`'s shape depends on `nature`: `null` for Rivalry (no cause table),
+`{ origins: [...] }` for Alliance (1 entry normally, 2 for a 10+ year alliance, 3 for a
+25+ year one), `{ causeOfWar, underlyingNature?, underlyingCause? }` for War (Conquest has
+no underlying cause; Envy/Fear/Hatred/Vengeance redirect into that nature's own table), and
+a plain cause string for every other nature. `region.relationships.journalId` points at the
+shared "`<Map Name>` - Relationships" JournalEntry, reused (new pages appended) on repeat
+runs rather than recreated.
+
+For the remaining two phases: each `generate*` function receives the region built so far
+(so later phases can react to earlier results) and returns the fields it produced;
+`runPhase` merges the result back into the region object in place.

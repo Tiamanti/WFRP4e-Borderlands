@@ -13,21 +13,24 @@ npm test         # vitest unit tests (Node, stubs in tests/setup.mjs)
 ## Status
 
 Build tooling, `/borderlands` command, `BorderlandsWizard` app, and the six-phase pipeline
-(`src/generation/region.mjs`) are wired up. **Geography, Ancient Ruins, and Princes are
-implemented** (see `PLAN.md` for all three designs). Geography: Table 1-1/1-2 rolls,
-radiating grid placement, Scene/Drawing painting via the interactive `GeographyRoller`
-dialog. Ancient Ruins: Table 1-3..1-8 rolls via the generic one-shot `runPhase` flow, ruins
-placed as scene `Note`s deep-linked to pages in a shared "`<Map Name>` - Ancient Ruins"
-JournalEntry. Princes: Tables 1-3, 2-1..2-11 rolls via the generic one-shot `runPhase`
-flow, `npc` Actors with linked Career/Skill/Talent Items (resolved against the required
-`wfrp4e-core` module's compendiums) filed into a shared "`<Map Name>`" Actor folder —
-**implemented but not yet manually verified in a live Foundry world** (no local install to
-test compendium resolution against), see PLAN.md's Princes section for open questions.
-The remaining three phase generators (`relationships.mjs`, `settlements.mjs`,
+(`src/generation/region.mjs`) are wired up. **Geography, Ancient Ruins, Princes, and
+Relationships are implemented** (see `PLAN.md` for all four designs). Geography: Table
+1-1/1-2 rolls, radiating grid placement, Scene/Drawing painting via the interactive
+`GeographyRoller` dialog. Ancient Ruins: Table 1-3..1-8 rolls via the generic one-shot
+`runPhase` flow, ruins placed as scene `Note`s deep-linked to pages in a shared "`<Map
+Name>` - Ancient Ruins" JournalEntry. Princes: Tables 1-3, 2-1..2-11 rolls via the generic
+one-shot `runPhase` flow, `npc` Actors with linked Career/Skill/Talent Items (resolved
+against the required `wfrp4e-core` module's compendiums) filed into a shared "`<Map
+Name>`" Actor folder — implemented and manually verified in a live Foundry world (see
+PLAN.md's Princes section for the fixes that came out of that pass). Relationships: Tables
+2-12..2-22 rolls via the generic one-shot `runPhase` flow, two relationships per prince
+(randomly paired, repeats allowed) written up one JournalEntryPage each into a shared
+"`<Map Name>` - Relationships" JournalEntry — **implemented but not yet manually verified
+in a live Foundry world**. The remaining two phase generators (`settlements.mjs`,
 `hazards.mjs`) still throw `"not yet implemented"`. See `SPECS.md` for the rules process
 and table page references, and `DEVELOPMENT.md`'s "Filling in a generation phase" section
 for the workflow — each remaining phase gets its own `PLAN.md`-style design pass before
-it's built, the same way Geography, Ancient Ruins, and Princes did.
+it's built, the same way Geography, Ancient Ruins, Princes, and Relationships did.
 
 ## Invariants
 

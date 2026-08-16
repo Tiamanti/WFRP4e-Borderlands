@@ -28,7 +28,7 @@ export function createRegion({ sceneName = "Borderlands", mapSize = { width: 20,
         geography: { sceneId: null, sceneName, mapSize, journalId: null, log: [], stoppedReason: null },
         ruins: { journalId: null, entries: [] },
         princes: { entries: [] },
-        relationships: [],
+        relationships: { journalId: null, entries: [] },
         settlements: [],
         hazards: [],
     };
@@ -48,6 +48,6 @@ export async function runPhase(region, phaseId, ...args) {
 export function isPhaseDone(region, phaseId) {
     const data = region[phaseId];
     if (phaseId === "geography") return data.log.length > 0;
-    if (phaseId === "ruins" || phaseId === "princes") return data.entries.length > 0;
+    if (phaseId === "ruins" || phaseId === "princes" || phaseId === "relationships") return data.entries.length > 0;
     return Array.isArray(data) ? data.length > 0 : Object.keys(data ?? {}).length > 0;
 }
