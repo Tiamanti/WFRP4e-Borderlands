@@ -31,3 +31,17 @@ globalThis.game = {
 };
 
 globalThis.ui = { notifications: { warn: vi.fn(), info: vi.fn(), error: vi.fn() } };
+
+// Controllable Roll stub for table-roll tests: push expected totals onto
+// `globalThis.__rollQueue` (FIFO, one entry per `new Roll(...).evaluate()` call) before
+// exercising code under test.
+globalThis.__rollQueue = [];
+globalThis.Roll = class {
+    constructor(formula) {
+        this.formula = formula;
+    }
+    async evaluate() {
+        this.total = globalThis.__rollQueue.length > 0 ? globalThis.__rollQueue.shift() : 0;
+        return this;
+    }
+};

@@ -15,6 +15,11 @@ describe("region", () => {
 
     it("phase generators are stubbed pending table data", async () => {
         const region = createRegion();
-        await expect(runPhase(region, "geography")).rejects.toThrow(/not yet implemented/);
+        await expect(runPhase(region, "ruins")).rejects.toThrow(/not yet implemented/);
+    });
+
+    it("geography is driven by the Geography Roller dialog, not runPhase", async () => {
+        const region = createRegion();
+        await expect(runPhase(region, "geography")).rejects.toThrow(/Geography Roller/);
     });
 });

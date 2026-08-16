@@ -12,12 +12,15 @@ npm test         # vitest unit tests (Node, stubs in tests/setup.mjs)
 
 ## Status
 
-Scaffold stage: build tooling, `/borderlands` command, `BorderlandsWizard` app, and the
-six-phase pipeline (`src/generation/region.mjs`) are wired up. Each phase generator
-(`geography.mjs`, `ruins.mjs`, `princes.mjs`, `relationships.mjs`, `settlements.mjs`,
-`hazards.mjs`) currently throws `"not yet implemented"` — the table rolls themselves are
-not yet built. See `SPECS.md` for the rules process and table page references, and
-`DEVELOPMENT.md`'s "Filling in a generation phase" section for the workflow.
+Build tooling, `/borderlands` command, `BorderlandsWizard` app, and the six-phase pipeline
+(`src/generation/region.mjs`) are wired up. **Geography is implemented** (Table 1-1/1-2
+rolls, radiating grid placement, Scene/Drawing painting via the interactive
+`GeographyRoller` dialog — see `PLAN.md` for the design). The other five phase generators
+(`ruins.mjs`, `princes.mjs`, `relationships.mjs`, `settlements.mjs`, `hazards.mjs`) still
+throw `"not yet implemented"`. See `SPECS.md` for the rules process and table page
+references, and `DEVELOPMENT.md`'s "Filling in a generation phase" section for the
+workflow — each remaining phase gets its own `PLAN.md`-style design pass before it's
+built, the same way Geography did.
 
 ## Invariants
 

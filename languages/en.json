@@ -8,5 +8,14 @@
   "BORDERLANDS.PhasePrinces": "3. Princes",
   "BORDERLANDS.PhaseRelationships": "4. Relationships",
   "BORDERLANDS.PhaseSettlements": "5. Settlements",
-  "BORDERLANDS.PhaseHazards": "6. Monsters & Hazards"
+  "BORDERLANDS.PhaseHazards": "6. Monsters & Hazards",
+  "BORDERLANDS.GeographyRollerTitle": "Geography",
+  "BORDERLANDS.RollNext": "Roll Next",
+  "BORDERLANDS.EndPhase": "End Phase",
+  "BORDERLANDS.RunningBonus": "Running Bonus",
+  "BORDERLANDS.GeographyMapFull": "map full — stopped automatically",
+  "BORDERLANDS.GeographyStopped": "phase ended",
+  "BORDERLANDS.GeographyLogRiver": "River",
+  "BORDERLANDS.GeographyLogSpecial": "Special Feature",
+  "BORDERLANDS.GeographySquares": "squares"
 }

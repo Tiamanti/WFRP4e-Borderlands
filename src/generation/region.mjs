@@ -21,7 +21,7 @@ export const REGION_PHASES = [
 /** Empty region data shape — one array/object per phase's output. */
 export function createRegion() {
     return {
-        geography: { features: [], rivers: [] },
+        geography: { sceneId: null, mapSize: { width: 20, height: 20 }, log: [], stoppedReason: null },
         ruins: [],
         princes: [],
         relationships: [],

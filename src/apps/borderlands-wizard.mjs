@@ -1,4 +1,5 @@
 import { REGION_PHASES, createRegion, runPhase } from "../generation/region.mjs";
+import GeographyRoller from "./geography-roller.mjs";
 
 const { ApplicationV2, HandlebarsApplicationMixin } = foundry.applications.api;
 
@@ -37,9 +38,11 @@ export default class BorderlandsWizard extends HandlebarsApplicationMixin(Applic
         context.phases = REGION_PHASES.map(phase => ({
             id: phase.id,
             label: phase.label,
-            done: Array.isArray(this.region[phase.id])
-                ? this.region[phase.id].length > 0
-                : Object.keys(this.region[phase.id] ?? {}).length > 0,
+            done: phase.id === "geography"
+                ? this.region.geography.log.length > 0
+                : Array.isArray(this.region[phase.id])
+                    ? this.region[phase.id].length > 0
+                    : Object.keys(this.region[phase.id] ?? {}).length > 0,
         }));
         context.region = this.region;
         return context;
@@ -47,6 +50,12 @@ export default class BorderlandsWizard extends HandlebarsApplicationMixin(Applic
 
     static async _onRunPhase(event, target) {
         const phaseId = target.dataset.phase;
+
+        if (phaseId === "geography") {
+            new GeographyRoller(this.region, { onClose: () => this.render() }).render(true);
+            return;
+        }
+
         try {
             await runPhase(this.region, phaseId);
         } catch (err) {
