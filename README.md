@@ -13,10 +13,11 @@ Run `/borderlands` to open the region generator and step through:
 
 ## Status
 
-Scaffold only — the wizard and phase pipeline are wired up, but the actual table rolls
-(`src/generation/*.mjs`) are stubs pending table data transcription from the source PDF.
-See `SPECS.md` for the process summaries and table locations, and `docs/SOURCE-MAP.md` for
-the source layout.
+All six phases are implemented: Geography, Ancient Ruins, Princes, Relationships,
+Settlements, and Monsters & Hazards. Three world-scope settings (default map size, banning
+oversized geography regions, and generating Appendix I place names for settlements) are also
+in. See `CLAUDE.md` for a phase-by-phase summary, `docs/SOURCE-MAP.md` for the full source
+map, and `PLAN.md`/`docs/DECISIONS.md` for the design rationale behind each phase.
 
 ## Requirements
 
@@ -24,6 +25,7 @@ the source layout.
 |---|---|
 | Foundry VTT | 13 (verified 14) |
 | WFRP4e system | — |
+| [`wfrp4e-core`](https://foundryvtt.com) module | — (required by `module.json` for the whole module, though only the Princes phase actually needs its Career/Skill/Talent compendiums — see `CLAUDE.md`'s Known Limitations) |
 
 ## Development
 

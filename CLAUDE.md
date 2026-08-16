@@ -12,34 +12,23 @@ npm test         # vitest unit tests (Node, stubs in tests/setup.mjs)
 
 ## Status
 
-Build tooling, `/borderlands` command, `BorderlandsWizard` app, and the six-phase pipeline
-(`src/generation/region.mjs`) are wired up. **All six phases are implemented. Geography,
-Ancient Ruins, Princes, Relationships, and Settlements are manually verified in a live
-Foundry world; Hazards is implemented but not yet manually verified** (see `PLAN.md` for all
-six designs). Geography:
-Table 1-1/1-2 rolls, radiating grid placement, Scene/Drawing painting via the interactive
-`GeographyRoller` dialog. Ancient Ruins: Table 1-3..1-8 rolls via the generic one-shot
-`runPhase` flow, ruins placed as scene `Note`s deep-linked to pages in a shared "`<Map
-Name>` - Ancient Ruins" JournalEntry. Princes: Tables 1-3, 2-1..2-11 rolls via the generic
-one-shot `runPhase` flow, `npc` Actors with linked Career/Skill/Talent Items (resolved
-against the required `wfrp4e-core` module's compendiums) filed into a shared "`<Map
-Name>`" Actor folder. Relationships: Tables 2-12..2-22 rolls via the generic one-shot
-`runPhase` flow, two relationships per prince (randomly paired, repeats allowed) written up
-into a shared "`<Map Name>` - Relationships" JournalEntry — one page **per prince**, mutual
-natures (Alliance/Rivalry/War) on both princes' pages, one-directional natures on only the
-feeling prince's page. Settlements: Tables 3-1..3-7 rolls via the generic one-shot
-`runPhase` flow, one town (if rolled)/villages/homesteads per prince's principality plus
-once more for the uncontrolled area, written into a shared "`<Map Name>` - Settlements"
-JournalEntry — one page per prince plus one for the uncontrolled area, no scene placement at
-all (placement preference included as text instead — the module has no record of which grid
-cells belong to which principality). Hazards: Tables 4-1..4-12 rolls, GM-chosen lair count
-(Few/Moderate/Many, prompted via a `DialogV2` before the generic one-shot `runPhase` flow
-runs), one of four branches per lair (Chaos/Greenskin/Monster/Undead — Undead's Dead Lords
-auto-generate a full Prince-style personality), written into a shared "`<Map Name>` -
-Hazards" JournalEntry — one page per lair (no owner to key by, unlike Relationships/
-Settlements), no scene placement at all (placement preference included as text instead, same
-as Settlements). See `SPECS.md` for the rules process and table page references, and
-`DEVELOPMENT.md`'s "Filling in a generation phase" section for the workflow.
+All six SPECS.md phases are implemented and committed. Geography through Settlements are
+manually verified in a live Foundry world; Hazards and the 3 settings (below) are
+implemented and committed but not yet confirmed working in-game — check before relying on
+them. See `docs/DECISIONS.md` for the "why" behind every non-obvious call below, and
+`PLAN.md` for the full narrative if `docs/DECISIONS.md` isn't enough detail.
+
+| Phase | Tables | Trigger | Foundry output |
+|---|---|---|---|
+| 1. Geography | 1-1, 1-2 | Interactive `GeographyRoller` dialog (not `runPhase` — this is the one phase with a per-step GM decision) | Scene painted with one `Drawing` per grid cell, radiating fill from the map's frontier; rivers logged only |
+| 2. Ancient Ruins | 1-3..1-8 | Generic one-shot `runPhase` | One page per ruin in `"<Map Name> - Ancient Ruins"`; a scene `Note` per ruin deep-links to its page |
+| 3. Princes | 1-3, 2-1..2-11 | Generic one-shot `runPhase` | `npc` Actors (linked Career/Skill/Talent Items, resolved against the required `wfrp4e-core` compendiums) in a shared `"<Map Name>"` Actor folder |
+| 4. Relationships | 2-12..2-22 | Generic one-shot `runPhase` | One page **per prince** in `"<Map Name> - Relationships"`; mutual natures (Alliance/Rivalry/War) on both pages, one-directional natures only on the feeling prince's page |
+| 5. Settlements | 3-1..3-7 | Generic one-shot `runPhase` | One page per prince plus one for the uncontrolled area in `"<Map Name> - Settlements"`, sorted largest-population-first; no scene placement |
+| 6. Hazards | 4-1..4-12 | GM-chosen lair count (Few/Moderate/Many, `DialogV2`) before the generic one-shot `runPhase` | One page **per lair** (no owner to key by) in `"<Map Name> - Hazards"`; no scene placement |
+
+See `SPECS.md` for the rules process and table page references, and `DEVELOPMENT.md`'s
+"Extending the module" section for the conventions to follow when changing any of this.
 
 ## Settings
 
@@ -59,17 +48,31 @@ GM, per direction).
 - `SPECS.md` is the source of truth for process order and table locations; `Renegade
   Crowns.pdf` is the copyrighted source book (gitignored — do not commit it).
 - When reading the PDF, jump to specific table pages rather than reading the whole
-  document — table descriptions usually continue onto the adjacent page.
+  document — table descriptions usually continue onto the adjacent page. Always cross-check
+  a dense table with `pdftotext -table`, not just `-layout` — see `docs/DECISIONS.md`'s
+  "Table transcription" entry for why.
 - Region data is a single plain object (`createRegion()` in `region.mjs`) with one field
   per phase; each `generate*` function receives the region built so far and returns only
   the fields it produced. `runPhase` merges the result back in.
 - Foundry min v13; uses ApplicationV2 API (see `src/apps/borderlands-wizard.mjs`).
+- Every phase's roll logic (`generation/<phase>.mjs`) is pure (`Roll` only) and unit-tested;
+  anything touching a real Foundry document lives in a sibling `*-scene/-journal/-actor/
+  -chat.mjs` file and isn't unit-tested. Don't mix the two in one file.
+
+## Known Limitations
+
+- `module.json`'s `relationships.requires: wfrp4e-core` makes the **entire module** require
+  the Core Rulebook content module to activate, even though only the Princes phase actually
+  needs its compendiums. Flagged during Princes' build, never revisited — worth changing to
+  `recommends` (or scoping the requirement some other way) if it becomes a real activation
+  blocker for a user who doesn't own `wfrp4e-core`.
 
 ## Entry point dispatch
 
-`src/wfrp4e-borderlands.mjs` → `Hooks.once("setup")` registers `/borderlands` via
-`game.wfrp4e.commands.add` → `commands/borderlands-command.mjs#handleBorderlandsCommand`
-(GM check) → opens `apps/borderlands-wizard.mjs#BorderlandsWizard`.
+`src/wfrp4e-borderlands.mjs` → `Hooks.once("init")` calls `settings.mjs#registerSettings`;
+`Hooks.once("setup")` registers `/borderlands` via `game.wfrp4e.commands.add` →
+`commands/borderlands-command.mjs#handleBorderlandsCommand` (GM check) → opens
+`apps/borderlands-wizard.mjs#BorderlandsWizard`.
 
 ## Docs
 
@@ -77,3 +80,6 @@ GM, per direction).
 |------|----------|
 | `SPECS.md` | Process summaries + table page locations (source of truth) |
 | `docs/SOURCE-MAP.md` | All src files, exports, region data shape |
+| `docs/DECISIONS.md` | Scannable list of every non-obvious/locked-in design decision |
+| `PLAN.md` | Full chronological design log, phase by phase (the detailed "why") |
+| `DEVELOPMENT.md` | Build/test workflow, project layout, conventions for extending the module |

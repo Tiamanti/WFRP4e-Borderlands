@@ -135,7 +135,6 @@ Page number is according to the book so one needs to add 2 to the page number fo
 3-5 | 46
 3-6 | 47
 3-7 | 49
-3-6 | 47
 4-1 | 58
 4-2 | 58
 4-3 | 58

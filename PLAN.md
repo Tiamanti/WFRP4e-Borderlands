@@ -1,5 +1,13 @@
 # WFRP4e Borderlands — Development Plan
 
+> **This is now a historical design log**, not a forward-looking plan — all six phases and
+> the 3 module settings described below are implemented and committed. It's kept because
+> each section explains the *why* behind a design in full narrative detail, including the
+> AskUserQuestion exchanges that settled it. For a quick, scannable lookup of a specific
+> decision without reading the surrounding narrative, see [`docs/DECISIONS.md`](docs/DECISIONS.md)
+> instead; for the current architecture/file map, see [`docs/SOURCE-MAP.md`](docs/SOURCE-MAP.md).
+> Read on only if you want the full story behind a specific design.
+
 ## Context
 
 `wfrp4e-borderlands` currently has only a boilerplate scaffold: a `/borderlands`
