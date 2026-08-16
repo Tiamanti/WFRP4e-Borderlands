@@ -25,9 +25,9 @@ describe("region", () => {
         await expect(runPhase(createRegion(), "not-a-phase")).rejects.toThrow(/Unknown Borderlands phase/);
     });
 
-    it("phase generators are stubbed pending table data", async () => {
+    it("hazards requires a GM-chosen lair style", async () => {
         const region = createRegion();
-        await expect(runPhase(region, "hazards")).rejects.toThrow(/not yet implemented/);
+        await expect(runPhase(region, "hazards")).rejects.toThrow(/campaign style/);
     });
 
     it("relationships requires at least two princes", async () => {
@@ -58,18 +58,21 @@ describe("region", () => {
             expect(isPhaseDone(region, "princes")).toBe(false);
             expect(isPhaseDone(region, "relationships")).toBe(false);
             expect(isPhaseDone(region, "settlements")).toBe(false);
+            expect(isPhaseDone(region, "hazards")).toBe(false);
 
             region.geography.log.push({ type: "river" });
             region.ruins.entries.push({ type: "Dwarf" });
             region.princes.entries.push({});
             region.relationships.entries.push({});
             region.settlements.entries.push({});
+            region.hazards.entries.push({});
 
             expect(isPhaseDone(region, "geography")).toBe(true);
             expect(isPhaseDone(region, "ruins")).toBe(true);
             expect(isPhaseDone(region, "princes")).toBe(true);
             expect(isPhaseDone(region, "relationships")).toBe(true);
             expect(isPhaseDone(region, "settlements")).toBe(true);
+            expect(isPhaseDone(region, "hazards")).toBe(true);
         });
     });
 });

@@ -8,13 +8,35 @@
 import { GEOGRAPHY_TABLE, SPECIAL_FEATURES_TABLE } from "../tables/geography.mjs";
 
 /**
+ * "Ban Large Geography Regions" setting: on a map under 500 squares, Table 1-1 results of
+ * 81-99 (the "1d10 * 20" and "1d10 * 50" size-tier rows) are rerolled entirely — not just
+ * capped — since even the smaller of those two tiers can swallow a small map on its own; on
+ * 500+ square maps only 91-99 (the "1d10 * 50" tier) is banned. The reroll is a fresh 1d100
+ * against the same running bonus, "without increasing the modifier" — a discarded attempt
+ * never counts as a step. Capped at 20 attempts as a safety net (mirrors Greenskin's 10-try
+ * reroll cap in generation/hazards.mjs) — never realistically hit, since even the narrower
+ * 91-99 ban is only a 9% chance per roll.
+ */
+function isBannedTotal(total, mapSquares) {
+    if (total > 100) return false; // Special Features (Table 1-2) are unaffected
+    const bannedFrom = mapSquares < 500 ? 81 : 91;
+    return total >= bannedFrom && total <= 99;
+}
+
+/**
  * Rolls one step of Table 1-1. A total over 100 delegates to rollSpecialFeature (Table 1-2)
  * instead of indexing past the table.
+ * @param {number} [runningBonus]
+ * @param {{banLargeRegions?: boolean, mapSquares?: number}} [options]
  * @returns {Promise<{roll: number, bonus: number, total: number} & ({type: "river"} | {type: "terrain", terrain: string, vegetation: string|null, size: number} | object)>}
  */
-export async function rollGeographyStep(runningBonus = 0) {
-    const roll = await new Roll("1d100").evaluate();
-    const total = roll.total + runningBonus;
+export async function rollGeographyStep(runningBonus = 0, { banLargeRegions = false, mapSquares = Infinity } = {}) {
+    let roll, total;
+    for (let attempt = 0; attempt < 20; attempt++) {
+        roll = await new Roll("1d100").evaluate();
+        total = roll.total + runningBonus;
+        if (!banLargeRegions || !isBannedTotal(total, mapSquares)) break;
+    }
 
     if (total > 100) {
         const special = await rollSpecialFeature();

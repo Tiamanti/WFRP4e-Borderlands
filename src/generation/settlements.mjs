@@ -12,6 +12,8 @@ import {
 } from "../tables/settlements.mjs";
 import { createSettlementsJournal } from "./settlements-journal.mjs";
 import { postSettlementsSummary } from "./settlements-chat.mjs";
+import { rollNamingStyleForRace, rollSettlementName } from "./names.mjs";
+import { MODULE_ID, SETTINGS } from "../settings.mjs";
 
 /** Table 3-2 step 1: whether the principality has a town at all ("if the result is over 100"). Never called for the uncontrolled area — "there are no towns between principalities." */
 export async function rollTownCheck(principalitySize) {
@@ -123,8 +125,14 @@ export async function rollCommunityFeatures(tier, resourceState, { onMonasteryFo
     return features;
 }
 
-/** Rolls one settlement's population and features. `onMonasteryForTown` is only consulted for tier "town" — see rollCommunityFeatures. */
-export async function rollSettlement(tier, ownerId, { onMonasteryForTown } = {}) {
+/**
+ * Rolls one settlement's population and features. `onMonasteryForTown` is only consulted
+ * for tier "town" — see rollCommunityFeatures. `generateNames` defaults to `false` here
+ * (opt-in, keeps this pure function's tests roll-queue-neutral) — `generateSettlements`
+ * always passes through the actual "Generate Names" setting (default `true` there), so
+ * end-to-end behavior matches the setting regardless of this default.
+ */
+export async function rollSettlement(tier, ownerId, { onMonasteryForTown, ownerStyle, generateNames = false } = {}) {
     const resourceState = { modifier: 0, marketRolled: false };
     const features = await rollCommunityFeatures(tier, resourceState, { onMonasteryForTown });
 
@@ -151,7 +159,9 @@ export async function rollSettlement(tier, ownerId, { onMonasteryForTown } = {})
     // whether Table 3-2 separately rolled an explicit Stronghold result.
     const isStronghold = features.some(f => f.type === "Stronghold" || f.type === "Templars" || f.isStronghold);
 
-    return { tier, ownerId, population, features, isStronghold };
+    const settlement = { tier, ownerId, population, features, isStronghold };
+    if (generateNames) settlement.name = await rollSettlementName(ownerStyle);
+    return settlement;
 }
 
 /**
@@ -159,19 +169,19 @@ export async function rollSettlement(tier, ownerId, { onMonasteryForTown } = {})
  * squares) or the uncontrolled area (`principalitySize: null`, `ownerId: null`, always
  * "medium" per the book, and never gets a town check).
  */
-export async function rollOwnerSettlements(ownerId, principalitySize) {
+export async function rollOwnerSettlements(ownerId, principalitySize, { ownerStyle, generateNames = false } = {}) {
     const settlements = [];
     let pendingMonastery = null;
     const onMonasteryForTown = () => { pendingMonastery = { type: "Monastery" }; };
 
     if (principalitySize !== null && await rollTownCheck(principalitySize)) {
-        settlements.push(await rollSettlement("town", ownerId, { onMonasteryForTown }));
+        settlements.push(await rollSettlement("town", ownerId, { onMonasteryForTown, ownerStyle, generateNames }));
     }
 
     const sizeBand = principalitySize !== null ? principalitySizeBand(principalitySize) : "medium";
     const villageCount = await rollVillageCount(sizeBand);
     for (let i = 0; i < villageCount; i++) {
-        const village = await rollSettlement("village", ownerId);
+        const village = await rollSettlement("village", ownerId, { ownerStyle, generateNames });
         if (pendingMonastery) {
             village.features.push(pendingMonastery);
             pendingMonastery = null;
@@ -181,7 +191,7 @@ export async function rollOwnerSettlements(ownerId, principalitySize) {
 
     const homesteadCount = await rollHomesteadCount();
     for (let i = 0; i < homesteadCount; i++) {
-        const homestead = await rollSettlement("homestead", ownerId);
+        const homestead = await rollSettlement("homestead", ownerId, { ownerStyle, generateNames });
         if (pendingMonastery) {
             homestead.features.push(pendingMonastery);
             pendingMonastery = null;
@@ -201,15 +211,20 @@ export async function generateSettlements(region) {
         throw new Error("Run the Princes phase first — Settlements are generated per principality.");
     }
 
+    const generateNames = game.settings.get(MODULE_ID, SETTINGS.generateNames);
+
     const newSettlements = [];
     for (const prince of region.princes.entries) {
-        newSettlements.push(...await rollOwnerSettlements(prince.actorId, prince.principalitySize));
+        // The prince's own naming style is only needed to bias their settlements' names —
+        // Princes themselves don't get a generated name at all, per direction.
+        const ownerStyle = generateNames ? await rollNamingStyleForRace(prince.race) : undefined;
+        newSettlements.push(...await rollOwnerSettlements(prince.actorId, prince.principalitySize, { ownerStyle, generateNames }));
     }
-    newSettlements.push(...await rollOwnerSettlements(null, null)); // the uncontrolled area
+    newSettlements.push(...await rollOwnerSettlements(null, null, { generateNames })); // the uncontrolled area — no owner style to bias toward
 
     const allSettlements = [...region.settlements.entries, ...newSettlements];
     const { journal } = await createSettlementsJournal(region, region.princes.entries, allSettlements);
-    await postSettlementsSummary(region, newSettlements, region.settlements.entries.length);
+    await postSettlementsSummary(region, newSettlements, region.settlements.entries.length, allSettlements);
 
     return { settlements: { journalId: journal.id, entries: allSettlements } };
 }

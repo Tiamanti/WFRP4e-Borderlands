@@ -1,4 +1,7 @@
 import { handleBorderlandsCommand } from "./commands/borderlands-command.mjs";
+import { registerSettings } from "./settings.mjs";
+
+Hooks.once("init", registerSettings);
 
 Hooks.once("setup", () => {
     game.wfrp4e.commands.add({

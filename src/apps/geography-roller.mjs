@@ -3,6 +3,7 @@ import { createGrid, claimNextCells, isGridFull } from "../generation/geography-
 import { createGeographyScene, placeCellLabels } from "../generation/geography-scene.mjs";
 import { postGeographySummary } from "../generation/geography-chat.mjs";
 import { createGeographyJournal } from "../generation/geography-journal.mjs";
+import { MODULE_ID, SETTINGS } from "../settings.mjs";
 
 const { ApplicationV2, HandlebarsApplicationMixin } = foundry.applications.api;
 
@@ -73,7 +74,11 @@ export default class GeographyRoller extends HandlebarsApplicationMixin(Applicat
             await createGeographyScene(this.region, this.region.geography.mapSize);
         }
 
-        const result = await rollGeographyStep(this.runningBonus);
+        const { width, height } = this.region.geography.mapSize;
+        const result = await rollGeographyStep(this.runningBonus, {
+            banLargeRegions: game.settings.get(MODULE_ID, SETTINGS.banLargeRegions),
+            mapSquares: width * height,
+        });
 
         if (result.type === "river" || result.placement === "boundary") {
             // Rivers, and boundary-line special features (Cliff — its roll is the

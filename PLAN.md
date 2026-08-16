@@ -1181,7 +1181,16 @@ total, production build clean.
 **Post-generation tweak**: each owner's page now sorts its settlements
 largest-population-first, so a Town (when one exists) always leads,
 followed by villages and homesteads in descending size — easier to scan
-than roll order. **Not yet manually verified in a live Foundry world.**
+than roll order. Manually verified in a live Foundry world.
+
+**Post-generation fix (Princes, not Settlements itself)**: Table 1-1's
+size formulas reused for Principality size could roll as high as 500,
+producing lopsided principalities (observed: 350 squares vs. 59 combined
+across the rest) — capped at `MAX_PRINCIPALITY_SIZE = 100` in
+`generation/princes.mjs`'s `rollPrincipalitySize`. Side effect: Table
+3-1's "Large" principality band (`principalitySize > 150`) is now
+permanently unreachable — harmless (Small/Medium still cover the full
+capped range), flagged here rather than silently left as dead code.
 
 ## Hazards phase design
 
@@ -1339,20 +1348,155 @@ pattern, since a lair has no natural "owner" to group by the way a
 relationship or settlement has a prince. No scene `Note`s, per the
 locked-in journal-only decision.
 
-### Not yet done for this phase
+### Status: implemented
 
-Design pass only — **no code for Hazards has been written yet**. Next
-steps when implementation starts: `src/tables/hazards.mjs` (Tables 4-2
-through 4-12 plus description dictionaries — Table 4-1 lives with the
-dialog instead, similar to how Geography's grid math sits next to its
-roller), `src/generation/hazards.mjs` (one roll function per branch,
-`generateHazards` orchestrator), a small `apps/lair-style-dialog.mjs` (or
-similar) for the Table 4-1 style prompt, `hazards-journal.mjs`,
-`hazards-chat.mjs`, wiring into `region.mjs`/`borderlands-wizard.mjs`
-(special-casing Hazards' Roll button to open the style dialog first, the
-same way Geography's already special-cased to open `GeographyRoller`),
-and tests mirroring the `settlements.test.mjs`/`relationships.test.mjs`
-roll-queue style.
+`src/tables/hazards.mjs` (Tables 4-1 through 4-12, all re-verified with
+`pdftotext -table` — one real misalignment found and fixed, Table 4-8's
+Giant column, everything else agreed with `-layout`), `src/apps/
+lair-style-dialog.mjs` (`promptLairStyle` — a 3-button `DialogV2`,
+resolving to `"few"`/`"moderate"`/`"many"` or `undefined` if dismissed),
+`src/generation/hazards.mjs` (`rollNumberOfLairs`, `rollMonsterType`,
+`rollChaosLair`, `rollGreenskinLair`, `rollMonsterLair`,
+`rollShamblingHorde`, `rollUndeadLair`, `rollLair`, `rollLairs`,
+`generateHazards` orchestrator), `hazards-journal.mjs` (one page per lair,
+appended — matches `ruins-scene.mjs`'s pattern, not
+Relationships'/Settlements' rebuilt-in-place-per-owner pattern, since a
+lair has no owner), `hazards-chat.mjs`; wired into `region.mjs`
+(`hazards: { journalId, entries }`, `isPhaseDone`) and
+`borderlands-wizard.mjs` (special-cases Hazards' Roll button to call
+`promptLairStyle()` first, bails out if dismissed, then runs the generic
+`runPhase("hazards", style)` flow and auto-opens the journal, same as
+Ruins/Relationships/Settlements).
+
+Two mechanics worth calling out, both confirmed by close reading rather
+than assumption:
+
+- **Table 4-5 (Chaos Followers) needs no independent roll** — its row is
+  Table 4-3's own `followerModifier` value directly (`min(5, 1 +
+  followerModifier)`), per the book's own phrasing ("+1 on Table 4-5" as a
+  row-selection instruction, not a modifier to a fresh roll).
+- **Table 4-12 (Shambling Hordes) rolls exactly once per column**, starting
+  on a randomly-picked column and wrapping around the remaining three, with
+  a cumulative modifier shared across all 4 rolls (resets per horde, not
+  within one — same shape as Settlements' Table 3-2 chain). Reused
+  identically for a standalone Shambling Horde lair and for a Dead Lord's
+  servants.
+
+Dead Lords auto-generate a full Prince-style personality by reusing
+`princes.mjs`'s `GOAL_TABLE`/`PRINCIPLES_TABLE`/`STYLE_TABLE` plus the
+now-exported `rollSecrets`/`rollQuirks`, exactly as locked in above — no
+duplicate personality tables in `tables/hazards.mjs`.
+
+Tests: `tests/tables/hazards.test.mjs` (band/description coverage across
+all twelve tables), `tests/generation/hazards.test.mjs` (roll-queue traces
+for every branch, including the Chaos Warrior aim sub-roll, the
+rollFollowers:false solo-leader path, the Greenskin all-zero retry and
+>1000 raiding-area trigger, each monster's headcount formula, the
+Shambling Horde wrap-around order and curse threshold, and the Dead Lord's
+full personality generation) — all matched their hand-computed expected
+roll sequences on the first run. 136 vitest tests total, production build
+clean. **Not yet manually verified in a live Foundry world** — this is
+the last of the six phases; once verified, `wfrp4e-borderlands` covers the
+full *Renegade Crowns* generation process end to end.
+
+## Settings design
+
+### Status: implemented
+
+Three world-scope settings, requested after all six phases were built.
+`src/settings.mjs` (`registerSettings`, called from `Hooks.once("init")`)
+registers all three; every setting is read once at its single Foundry-side
+call site and threaded down as a plain parameter into the pure roll
+functions below it (same pattern Hazards' GM-chosen lair style already
+established for `generateHazards(region, style)`), so nothing downstream
+needs a `game.settings` stub in tests.
+
+**1. Default Map Size** (`defaultMapSize`, String "WxH", default
+`"20x20"`) — `borderlands-command.mjs` parses it with the same
+`parseMapSize` helper the `mapSize=WxH` command arg already uses, and
+passes the result as that parser's fallback. An invalid setting value
+(shouldn't happen — the setting only ever accepts what the picker writes)
+falls back to the hardcoded `DEFAULT_MAP_SIZE` constant, same as an
+invalid command arg does today.
+
+**2. Ban Large Geography Regions** (`banLargeRegions`, Boolean, default
+`false`) — on a map under 500 squares, Table 1-1 results of 81-99 (the
+`1d10 * 20` and `1d10 * 50` size-tier rows) are rerolled entirely; on a
+500+ square map, only 91-99 (the `1d10 * 50` tier) is banned. The reroll
+is a fresh 1d100 against the same running bonus — a discarded attempt
+never counts as a step, so the bonus doesn't creep from the retries
+themselves. Implemented as a bounded retry loop inside
+`rollGeographyStep` (capped at 20 attempts, mirroring Hazards' Greenskin
+reroll cap — never realistically hit, since even the narrower 91-99 ban
+is only a 9% chance per roll), gated behind the new `banLargeRegions`/
+`mapSquares` options so the existing no-option call sites (and their
+tests) are unaffected. `GeographyRoller` reads the setting and computes
+`mapSquares` from `region.geography.mapSize` fresh on every roll.
+
+**3. Generate Names** (`generateNames`, Boolean, default `true`) — the
+open design question here was locked in via two rounds of
+AskUserQuestion:
+
+- Princes do **not** get a generated personal name at all — the user
+  chose to skip that entirely and leave it to the GM, overriding the
+  original request's "generate names for Princes and places." This
+  simplified the design a lot: since every settlement in Appendix I is
+  cultural-style-based with full 1-100 coverage across all 6 styles (see
+  below), there's no case where "no table is available," so the
+  originally-proposed `/name` (WFRP4e's own name-gen command) fallback
+  turned out to be unnecessary — nothing in the final design calls it.
+- A settlement's naming style is **biased 50% toward its owning prince's
+  own race-mapped style, 10% each toward the other 5** (the user's own
+  phrasing, "a biased table"). Table 2-2's Race table (`RACE_TABLE`,
+  `tables/princes.mjs`) only names 4 Human sub-cultures (Border Princes,
+  Bretonnian, Empire, Tilean) plus "Other," and Dwarf/Elf/Halfling, none
+  of which line up 1:1 with Appendix I's 6 styles (Empire, Bretonnian,
+  Tilean, Estalian, Kislevite, Flavourful) — `RACE_TO_STYLE`
+  (`tables/names.mjs`) maps the 4 direct matches plus Border
+  Princes/Dwarf/Elf/Halfling → Flavourful (the appendix's own "native,
+  unclaimed land" style); `"Human—Other"` is deliberately left out of
+  that map and instead split 50/50 between Estalian and Kislevite in
+  `rollNamingStyleForRace` (`generation/names.mjs`), so every one of the
+  6 tables gets used somewhere. This mapping itself wasn't put to
+  AskUserQuestion (the question was skipped when Prince naming itself
+  was dropped) — a judgment call, flagged here per project convention,
+  easy to revisit if it turns out wrong in play. The uncontrolled area
+  (no prince) biases toward Flavourful directly (`ownerStyle: null` →
+  `"Flavourful"` in `rollSettlementNamingStyle`).
+
+Appendix I's data (`tables/names.mjs`, Tables A-1 through A-12) was
+transcribed from `pdftotext -table` output — `-layout` mode wrapped
+several longer words ("Hunter's", "Hangman's", "Sigmar's", "Wolf's") onto
+the row below instead of alongside their band, shifting that whole
+column; every style's band widths were hand-summed to exactly 100 to
+confirm the `-table` transcription, the same cross-check used for every
+other Renegade Crowns table in this module. One entry (Flavourful's
+band 1-2, `"'Wocky"`) is a best-effort reading of a character the PDF's
+text layer renders as a bare backtick in both extraction modes, almost
+certainly a mis-encoded apostrophe.
+
+`generation/settlements.mjs`'s `rollSettlement`/`rollOwnerSettlements`
+both default `generateNames` to `false` (opt-in, keeps their own tests
+roll-queue-neutral); `generateSettlements` reads the actual setting and
+always passes it through explicitly, so the setting's `true` default is
+still what end users see. When on, every settlement (town, village, and
+homestead alike) gets a `name`; when off, the field is omitted entirely
+rather than `null`, matching how settlements looked before this feature
+existed. `settlements-journal.mjs`/`settlements-chat.mjs` both prefix the
+name onto their existing tier heading when present.
+
+Tests: `tests/tables/names.test.mjs` (band-width-sums-to-100 coverage
+across all 6 styles, `RACE_TO_STYLE`'s exact mapping),
+`tests/generation/names.test.mjs` (roll-queue traces for the race→style
+mapping including the Human—Other 50/50 split, the settlement style bias
+including its uncontrolled-area Flavourful default, and both name-join
+conventions — concatenated vs. Flavourful's space-joined pair), plus new
+cases in `tests/generation/geography.test.mjs` (the reroll mechanic, both
+map-size thresholds, confirming Special Features are never treated as
+banned) and `tests/generation/settlements.test.mjs` (a settlement with
+`generateNames: true` gets a `name`, matching the existing opt-in default
+without one). 157 vitest tests total, production build clean. **Not yet
+manually verified in a live Foundry world.**
 
 ## Not in scope for this plan (future sessions)
 

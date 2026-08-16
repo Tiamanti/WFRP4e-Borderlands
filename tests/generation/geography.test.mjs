@@ -52,4 +52,39 @@ describe("geography rolls", () => {
         expect(cliff.size).toBe(650);
         expect(cliff.sizeUnit).toBe("feet");
     });
+
+    describe("banLargeRegions", () => {
+        it("does nothing when the option is off (default)", async () => {
+            globalThis.__rollQueue = [85, 40]; // 85 would be banned if the option were on
+            const result = await rollGeographyStep(0);
+            expect(result.total).toBe(85);
+        });
+
+        it("rerolls 81-99 without increasing the bonus, on a map under 500 squares", async () => {
+            globalThis.__rollQueue = [85, 2, 50]; // 85 banned (small map) -> reroll; 2 -> Plains Scrubland; size 50
+            const result = await rollGeographyStep(0, { banLargeRegions: true, mapSquares: 400 });
+            expect(result.roll).toBe(2);
+            expect(result.bonus).toBe(0); // the discarded 85 never bumped the bonus
+            expect(result.total).toBe(2);
+        });
+
+        it("only bans 91-99 on a map of 500+ squares — 81-90 rolls through untouched", async () => {
+            globalThis.__rollQueue = [85, 40]; // 85 not banned on a large map
+            const result = await rollGeographyStep(0, { banLargeRegions: true, mapSquares: 600 });
+            expect(result.total).toBe(85);
+        });
+
+        it("still rerolls 91-99 on a map of 500+ squares", async () => {
+            globalThis.__rollQueue = [95, 2, 50]; // 95 banned even on a large map -> reroll; 2 -> Plains Scrubland; size 50
+            const result = await rollGeographyStep(0, { banLargeRegions: true, mapSquares: 600 });
+            expect(result.total).toBe(2);
+        });
+
+        it("never treats a >100 total (Special Feature) as banned", async () => {
+            globalThis.__rollQueue = [95, 3]; // 95 + 10 bonus = 105 -> special, untouched by the ban; 1d10 3 -> Fertile Valley
+            const result = await rollGeographyStep(10, { banLargeRegions: true, mapSquares: 400 });
+            expect(result.type).toBe("special");
+            expect(result.feature).toBe("Fertile Valley");
+        });
+    });
 });

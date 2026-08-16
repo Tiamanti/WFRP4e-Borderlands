@@ -13,9 +13,10 @@ npm test         # vitest unit tests (Node, stubs in tests/setup.mjs)
 ## Status
 
 Build tooling, `/borderlands` command, `BorderlandsWizard` app, and the six-phase pipeline
-(`src/generation/region.mjs`) are wired up. **Geography, Ancient Ruins, Princes, and
-Relationships are implemented and manually verified in a live Foundry world; Settlements is
-implemented but not yet manually verified** (see `PLAN.md` for all five designs). Geography:
+(`src/generation/region.mjs`) are wired up. **All six phases are implemented. Geography,
+Ancient Ruins, Princes, Relationships, and Settlements are manually verified in a live
+Foundry world; Hazards is implemented but not yet manually verified** (see `PLAN.md` for all
+six designs). Geography:
 Table 1-1/1-2 rolls, radiating grid placement, Scene/Drawing painting via the interactive
 `GeographyRoller` dialog. Ancient Ruins: Table 1-3..1-8 rolls via the generic one-shot
 `runPhase` flow, ruins placed as scene `Note`s deep-linked to pages in a shared "`<Map
@@ -31,11 +32,27 @@ feeling prince's page. Settlements: Tables 3-1..3-7 rolls via the generic one-sh
 once more for the uncontrolled area, written into a shared "`<Map Name>` - Settlements"
 JournalEntry — one page per prince plus one for the uncontrolled area, no scene placement at
 all (placement preference included as text instead — the module has no record of which grid
-cells belong to which principality). The remaining phase generator (`hazards.mjs`) still
-throws `"not yet implemented"`. See `SPECS.md` for the rules process and table page
-references, and `DEVELOPMENT.md`'s "Filling in a generation phase" section for the workflow
-— the remaining phase gets its own `PLAN.md`-style design pass before it's built, the same
-way every phase above did.
+cells belong to which principality). Hazards: Tables 4-1..4-12 rolls, GM-chosen lair count
+(Few/Moderate/Many, prompted via a `DialogV2` before the generic one-shot `runPhase` flow
+runs), one of four branches per lair (Chaos/Greenskin/Monster/Undead — Undead's Dead Lords
+auto-generate a full Prince-style personality), written into a shared "`<Map Name>` -
+Hazards" JournalEntry — one page per lair (no owner to key by, unlike Relationships/
+Settlements), no scene placement at all (placement preference included as text instead, same
+as Settlements). See `SPECS.md` for the rules process and table page references, and
+`DEVELOPMENT.md`'s "Filling in a generation phase" section for the workflow.
+
+## Settings
+
+3 world-scope settings (`src/settings.mjs`, registered `Hooks.once("init")`): **Default Map
+Size** (`defaultMapSize`, String "WxH", default `"20x20"` — `/borderlands`'s fallback when no
+`mapSize=WxH` arg is given). **Ban Large Geography Regions** (`banLargeRegions`, Boolean,
+default `false` — rerolls Table 1-1 results of 81-99 on maps under 500 squares, 91-99 on
+500+, without bumping the running bonus). **Generate Names** (`generateNames`, Boolean,
+default `true` — names every settlement using Appendix I's naming tables
+(`tables/names.mjs`), biased 50% toward the owning prince's race-mapped cultural style, 10%
+each toward the other 5; the uncontrolled area's settlements bias toward Flavourful, the
+"native" style. Princes deliberately do **not** get a generated personal name — left to the
+GM, per direction).
 
 ## Invariants
 

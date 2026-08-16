@@ -19,5 +19,16 @@
   "BORDERLANDS.GeographyLogSpecial": "Special Feature",
   "BORDERLANDS.GeographySquares": "squares",
   "BORDERLANDS.InvalidMapSize": "Invalid map size \"{input}\" — expected e.g. 20x20. Using the default instead.",
-  "BORDERLANDS.PrincesGenerated": "{count} prince(s) generated — see the Actors sidebar."
+  "BORDERLANDS.PrincesGenerated": "{count} prince(s) generated — see the Actors sidebar.",
+  "BORDERLANDS.LairStyleTitle": "Monsters & Hazards",
+  "BORDERLANDS.LairStylePrompt": "How many lairs should this region have?",
+  "BORDERLANDS.LairStyleFew": "Few",
+  "BORDERLANDS.LairStyleModerate": "Moderate",
+  "BORDERLANDS.LairStyleMany": "Many",
+  "BORDERLANDS.Settings.DefaultMapSize.Name": "Default Map Size",
+  "BORDERLANDS.Settings.DefaultMapSize.Hint": "Used by /borderlands when no mapSize=WxH argument is given. Format: WxH (e.g. 20x20).",
+  "BORDERLANDS.Settings.BanLargeRegions.Name": "Ban Large Geography Regions",
+  "BORDERLANDS.Settings.BanLargeRegions.Hint": "On maps under 500 squares, rerolls Table 1-1 results of 81-99 (without increasing the running bonus); on maps of 500 squares or more, only 91-99 are banned. Keeps a single terrain feature from overwhelming a small map.",
+  "BORDERLANDS.Settings.GenerateNames.Name": "Generate Names",
+  "BORDERLANDS.Settings.GenerateNames.Hint": "Generates place names for settlements using Appendix I's naming tables (biased toward the owning Prince's cultural style)."
 }

@@ -26,8 +26,9 @@ function renderFeatureHtml(feature) {
 
 function renderSettlementHtml(settlement) {
     const tierLabel = settlement.tier.charAt(0).toUpperCase() + settlement.tier.slice(1);
+    const namePrefix = settlement.name ? `${settlement.name} — ` : "";
     const featureItems = settlement.features.map(renderFeatureHtml).join("");
-    return `<h3>${tierLabel}${settlement.isStronghold ? " (Stronghold)" : ""} — population ${settlement.population}</h3>
+    return `<h3>${namePrefix}${tierLabel}${settlement.isStronghold ? " (Stronghold)" : ""} — population ${settlement.population}</h3>
 <p><em>Placement:</em> ${PLACEMENT_GUIDANCE[settlement.tier]}</p>
 ${featureItems ? `<ul>${featureItems}</ul>` : "<p>No notable features.</p>"}`;
 }

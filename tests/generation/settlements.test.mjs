@@ -145,6 +145,21 @@ describe("rollSettlement", () => {
         expect(village.population).toBe(150);
         expect(village.features).toEqual([{ type: "Stronghold" }]);
     });
+
+    it("has no name field when generateNames isn't passed (opt-in default)", async () => {
+        globalThis.__rollQueue = [7, 150];
+        const village = await rollSettlement("village", "prince-1");
+        expect(village.name).toBeUndefined();
+    });
+
+    it("rolls a name when generateNames is true, biased toward ownerStyle", async () => {
+        globalThis.__rollQueue = [
+            7, 150, // chain base -> Stronghold; population
+            50, 5, 3, // name: style roll <=50 -> Tilean (bias); Tilean First 5 -> "Arn"; Second 3 -> "enze"
+        ];
+        const village = await rollSettlement("village", "prince-1", { ownerStyle: "Tilean", generateNames: true });
+        expect(village.name).toBe("Arnenze");
+    });
 });
 
 describe("rollOwnerSettlements", () => {

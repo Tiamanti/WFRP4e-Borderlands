@@ -44,8 +44,10 @@ async function rollPrincipalitySize() {
  * those is *also* "Roll Twice," recurses again. Capped at `maxSecrets` (book: "four secrets
  * is probably as many as a single prince can reasonably have"), which also bounds the
  * recursion — once the cap is hit, further rolls are skipped rather than re-rolled.
+ * Exported for reuse by Hazards' Dead Lords (generation/hazards.mjs), which the book
+ * explicitly suggests giving a full Prince-style personality.
  */
-async function rollSecrets(maxSecrets = 4) {
+export async function rollSecrets(maxSecrets = 4) {
     const secrets = [];
     async function rollOnce() {
         if (secrets.length >= maxSecrets) return;
@@ -73,7 +75,8 @@ async function rollSingleIgnoringTens() {
     return QUIRKS_TABLE[roll.total].quirk;
 }
 
-async function rollQuirks() {
+/** Exported for reuse by Hazards' Dead Lords (generation/hazards.mjs) — see rollSecrets. */
+export async function rollQuirks() {
     const roll = await new Roll("1d10").evaluate();
     if (roll.total !== 10) return [QUIRKS_TABLE[roll.total].quirk];
     return [await rollSingleIgnoringTens(), await rollSingleIgnoringTens()];
