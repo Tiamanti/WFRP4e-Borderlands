@@ -15,6 +15,9 @@ export async function createGeographyScene(region, { width = 20, height = 20, gr
         // which then can't be fully explored/seen by players — this scene has no need for
         // padding around the playable area, so it's turned off entirely.
         padding: 0,
+        // Makes the generated map the one players see immediately, without the GM having
+        // to remember to activate it by hand.
+        active: true,
     });
     region.geography.sceneId = scene.id;
     return scene;

@@ -27,7 +27,7 @@ describe("region", () => {
 
     it("phase generators are stubbed pending table data", async () => {
         const region = createRegion();
-        await expect(runPhase(region, "princes")).rejects.toThrow(/not yet implemented/);
+        await expect(runPhase(region, "relationships")).rejects.toThrow(/not yet implemented/);
     });
 
     it("geography is driven by the Geography Roller dialog, not runPhase", async () => {
@@ -41,19 +41,22 @@ describe("region", () => {
     });
 
     describe("isPhaseDone", () => {
-        it("checks geography's log, ruins' entries, and falls back to array/object-keys for the rest", () => {
+        it("checks geography's log, ruins'/princes' entries, and falls back to array/object-keys for the rest", () => {
             const region = createRegion();
             expect(isPhaseDone(region, "geography")).toBe(false);
             expect(isPhaseDone(region, "ruins")).toBe(false);
             expect(isPhaseDone(region, "princes")).toBe(false);
+            expect(isPhaseDone(region, "relationships")).toBe(false);
 
             region.geography.log.push({ type: "river" });
             region.ruins.entries.push({ type: "Dwarf" });
-            region.princes.push({});
+            region.princes.entries.push({});
+            region.relationships.push({});
 
             expect(isPhaseDone(region, "geography")).toBe(true);
             expect(isPhaseDone(region, "ruins")).toBe(true);
             expect(isPhaseDone(region, "princes")).toBe(true);
+            expect(isPhaseDone(region, "relationships")).toBe(true);
         });
     });
 });

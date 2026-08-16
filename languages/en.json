@@ -18,5 +18,6 @@
   "BORDERLANDS.GeographyLogRiver": "River",
   "BORDERLANDS.GeographyLogSpecial": "Special Feature",
   "BORDERLANDS.GeographySquares": "squares",
-  "BORDERLANDS.InvalidMapSize": "Invalid map size \"{input}\" — expected e.g. 20x20. Using the default instead."
+  "BORDERLANDS.InvalidMapSize": "Invalid map size \"{input}\" — expected e.g. 20x20. Using the default instead.",
+  "BORDERLANDS.PrincesGenerated": "{count} prince(s) generated — see the Actors sidebar."
 }

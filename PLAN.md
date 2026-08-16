@@ -659,33 +659,30 @@ Renegade Crowns tables, band/lookup style like `tables/ruins.mjs`:
   `geography.mjs`'s `GEOGRAPHY_TABLE` (for principality size, Table 1-1
   reused — "ignore the type of terrain, and roll the indicated dice").
 
-### 2. Race conversion data — `src/tables/race-conversion.mjs`
+### 2. Characteristic generation — `src/tables/race-conversion.mjs`
 
-Much smaller than originally planned, and the **only** part of
-`Conversion_Rules.pdf` that still needs to be shipped as runtime data —
-Career/Skill/Talent conversion is now a one-time transcription-aid only
-(§1), not runtime data, because a prince's career/skills/talents don't
-depend on the race that gets rolled for them. Race *does* get rolled per
-prince (Table 2-2), and does change characteristics, so that one piece
-stays a small live lookup:
+Revised again after implementation started: **race stays narrative-only**
+for princes, per direction ("Since Princes will be NPCs I don't think
+they use Race as it will be only narrative"). Princes are NPCs, not PCs —
+unlike a player Character, an NPC's race doesn't need a mechanically
+"correct" characteristic conversion; a GM just wants a plausible statline.
+So `RACE_CHARACTERISTIC_OFFSETS` (the per-race WS/BS/S/T/Agi/Int/WP/Fel/M
+offset table originally planned here) was **dropped entirely** — every
+prince uses the Table 2-1 type's baseline characteristics unchanged,
+regardless of rolled race. Table 2-2 is still rolled (and still applies the
+book's "impossible combination" reroll for Dwarf/Halfling Wizards/Priests,
+since that's a lore-plausibility rule, not a stat rule) — the result just
+becomes flavor text (`system.details.species.value`) instead of feeding
+characteristic math.
 
-- `RACE_CHARACTERISTIC_OFFSETS` — keyed by race (`Human`, `Elf`, `Dwarf`,
-  `Halfling`; the 5 Human cultural flavors from Table 2-2 all map to the
-  `Human` row, i.e. no offset, since the Table 2-1 baseline is already
-  Human-converted per §1). One entry per characteristic
-  (WS/BS/S/T/Agi/Int/WP/Fel/M), each either `0` (no change — true for every
-  Human characteristic) or `±N`, applied on top of the statblock's baked-in
-  4e Human-baseline value. Bounded, ~4 rows × 9 columns — transcribed once
-  from `Conversion_Rules.pdf` PDF pages 3-13, no `-table`/`-layout` risk at
-  this size (small enough to eyeball against the rendered PDF page
-  directly).
-- `RACE_NEW_CHARACTERISTIC_DICE` — keyed by race, `{ initiative: formula,
-  dexterity: formula }` — 2e has neither stat, so these are always
-  "generate fresh," never an offset, regardless of race.
-- Attacks (2e-only, no 4e equivalent) is simply never carried over — no
-  table entry needed. Wounds is **always** recomputed via 4e's own formula
-  (`SB + 2×TB + WPB`, using the race-adjusted S/T/WP), not looked up from
-  any table.
+What's left in this file is much smaller: `NEW_CHARACTERISTIC_DICE`, a
+single `{ initiative, dexterity }` dice pair (Conversion_Rules.pdf's Human
+row — 2e has neither stat at all, so both are always "Generate New Stats"
+regardless of race). Wounds isn't computed here either — the wfrp4e system
+auto-calculates it from S/T/WP once the Actor's characteristics are set
+(`StandardActorModel#computeWounds` in `packages/wfrp4e/src/model/actor/
+standard.js`, "avg size" case: `SB + 2×TB + WPB`), so duplicating that
+formula here would just be redundant.
 
 ### 3. Roll + conversion logic — `src/generation/princes.mjs`
 
@@ -693,89 +690,280 @@ Pure functions, mirroring `ruins.mjs`'s structure:
 
 - `rollPrinces(region)` — rolls Table 1-3 for a count, then per prince:
   type (2-1), race (2-2, re-rolling on an impossible Wizard/Priest +
-  Dwarf/Halfling combination), current career + stage (2-3/2-4, flavor
-  only), goal/principles/style/secrets/quirks (2-5..2-9), courtiers (2-10),
-  title (2-11), principality size (Table 1-1 reroll). Returns plain roll
-  results — no Foundry Actor/Item creation here, so this stays unit-testable
-  with the `__rollQueue` stub exactly like `rollAncientRuins`.
-- `convertCharacteristics(statblock, race)` — applies
-  `RACE_CHARACTERISTIC_OFFSETS` to a Table 2-1 type's (already Human-baseline
-  4e) `characteristics` for the rolled race, fresh `Roll`s for
-  Initiative/Dexterity via `RACE_NEW_CHARACTERISTIC_DICE`, recomputes Wounds
-  from the race-adjusted S/T/WP bonuses. Pure, Roll-based, unit-testable —
-  this is the only conversion step that still runs per-generation, since
-  it's the only piece that depends on the randomly-rolled race.
-- No `convertCareerChain`/`convertSkillsAndTalents` functions — removed from
-  this design. `prince.career`/`.skills`/`.talents`/`.guidanceNotes` are
-  read directly off the Table 2-1 entry (§1); they're already 4e and don't
-  vary by race, so there's nothing left to convert at roll time.
+  Dwarf/Halfling combination — narrative only, see §2), current career +
+  stage (2-3/2-4, flavor only), goal/principles/style/secrets/quirks
+  (2-5..2-9), courtiers (2-10), title (2-11), principality size (Table 1-1
+  reroll). Returns plain roll results — no Foundry Actor/Item creation
+  here, so this stays unit-testable with the `__rollQueue` stub exactly
+  like `rollAncientRuins`.
+- `convertCharacteristics(statblock)` — takes *no* race parameter (see
+  §2): returns the Table 2-1 type's baseline characteristics plus fresh
+  `Roll`s for Initiative/Dexterity via `NEW_CHARACTERISTIC_DICE`. Pure,
+  Roll-based, unit-testable.
+- No `convertCareerChain`/`convertSkillsAndTalents` functions. `prince.career`/
+  `.skills`/`.talents`/`.guidanceNotes` are read directly off the Table 2-1
+  entry (§1); they're already 4e and don't vary by race, so there's
+  nothing left to convert at roll time.
 
 ### 4. Materializing onto Foundry — `src/generation/princes-actor.mjs`
 
 - `getOrCreateActorFolder(region)` — same pattern as `journal-folder.mjs`,
   new file since Folders are typed per document-type (`type: "Actor"`);
-  stores `region.actorFolderId`.
-- `resolveCompendiumItems(names, itemType)` — looks up the **already-4e**
-  career/skill/talent names straight off the Table 2-1 entry (§1) against
-  `wfrp4e-core`'s compendium pack(s) (pack id(s) to be confirmed against a
-  live world at implementation time — `wfrp4e`'s own bundled pack is a
-  single `wfrp4e.basic` pack with mixed item types, `wfrp4e-core` may be
-  structured the same way or split per type). Matching is simpler than
-  originally scoped, since there's no more 2e→4e semantic ambiguity to
-  resolve here at runtime — that judgment call was already made once, by
-  hand, while transcribing the table (§1). What's left is exact-name
-  matching against whatever `wfrp4e-core` actually ships (plus normal
-  compendium drift/typo fallback): matches by exact name first; for a
-  specialized skill/talent with no exact match (e.g. compendium only has
-  the generic `"Lore (any)"` template), creates the Item with
-  `skipSpecialisationChoice: true` and sets the resolved specialization
-  name directly, rather than triggering wfrp4e's interactive specialization
-  picker mid-batch-creation (see `skill.js#_handleSpecialisationChoice` —
-  that dialog is meant for a human adding one skill at a time, not a batch
-  of ~15 per generated prince). Any name that still can't be resolved logs
-  a warning and is skipped (added to the biography's guidance list instead
-  of silently failing).
-- `createPrinceActor(region, prince)` — creates the `npc`-type Actor:
-  `system.characteristics.*.initial` from `convertCharacteristics`, career
-  Item from `prince.career` (already parsed — §1), skill/talent Items from
-  `resolveCompendiumItems`, `system.details.biography` built from
-  race/title/goal/principles/style/secrets/quirks/courtiers/principality
-  size/prior-career flavor text/`guidanceNotes`, filed into the folder from
-  `getOrCreateActorFolder`.
+  mutates `region.actorFolderId` directly (top-level on the region, not
+  nested under `princes` — mirrors `region.journalFolderId`).
+- Pack discovery ended up reusing **wfrp4e's own lookup utilities** rather
+  than a hardcoded pack id or a `wfrp4e-core`-only search, both of which
+  were tried first and turned out wrong: manual playtesting found "Basic"
+  skills like Stealth and Ride weren't resolving even though wfrp4e-core
+  was installed — they ship in the **wfrp4e system's own** bundled pack,
+  not wfrp4e-core's, so a search scoped to `wfrp4e-core` alone missed
+  them. `game.wfrp4e.utility.findExactName(name, type)` /
+  `findBaseName(name, type)` (`packages/wfrp4e/src/system/utility-wfrp4e.js`)
+  are the same helpers wfrp4e itself uses to resolve items by name — they
+  search every compendium pack tagged with that item type
+  (`game.wfrp4e.tags.getPacksWithTag`, which scans *all* installed packs'
+  own indexes, not any one module's), so this now finds items regardless
+  of which module actually ships them. `wfrp4e-core` stays a required
+  dependency because it's what supplies the "Advanced"/grouped skills,
+  Careers, and Talents the system's own pack doesn't have.
+- `findItem(baseName, itemType)` — `findExactName` first; `findBaseName`
+  as a fallback for a specialised name with no exact entry (e.g. only a
+  generic `"Lore (any)"` template exists) — `findBaseName` matches on the
+  name before the `"(...)"` bracket and returns a *clone already renamed*
+  to the full specialised name, so no separate generic-template handling
+  is needed on this module's side. The caller still creates the embedded
+  Item with `skipSpecialisationChoice: true` so wfrp4e's interactive
+  specialisation picker doesn't pop mid-batch-creation
+  (`skill.js#_handleSpecialisationChoice`).
+- `resolveCareerItem(career)` — career Items are per-tier: the compendium
+  entry's `name` is the *level* name (e.g. `"Outlaw Chief"`), and
+  `system.careergroup.value` is the career line (e.g. `"Outlaw"`) —
+  matched on both, not just the level name, since level names aren't
+  necessarily unique across different career lines. Not a `findItem` call
+  since that only matches on name.
+- `resolveNamedItems(names, itemType)` — resolves a list of already-4e
+  Skill/Talent names into embeddable Item data; anything not found in any
+  installed compendium is collected into `missing` instead of silently
+  dropped, and surfaced in the biography's "Not found automatically" list.
+- `resolveBasicSkills(existingSkillNames)` — princes *should* have
+  wfrp4e's standard Basic Skills set (untrained-usable skills like Charm,
+  Dodge, Gossip — makes the NPC much easier to actually run at the table,
+  not just flavor completeness), the same set wfrp4e's own "Add Basic
+  Skills?" prompt offers. Fetched directly via
+  `game.wfrp4e.utility.allBasicSkills()` instead of going through that
+  prompt, filtering out anything already covered by `prince.skills`
+  (compared by base name, ignoring a `"+N%"` suffix) so the two sources
+  never produce a duplicate Item for the same skill.
+- `Actor.create(data, { skipItems: true })` — without this, wfrp4e's own
+  `Actor#_preCreate` (`packages/wfrp4e/src/documents/actor.js`) sees an
+  Actor being created with no `data.items` (this module adds Items via a
+  separate `createEmbeddedDocuments` call right after, not in the initial
+  `Actor.create` payload) and pops its own "Add Basic Skills?" confirm
+  dialog regardless. `skipItems: true` suppresses that prompt — this
+  phase already includes its own deduped Basic Skills set (above) in the
+  `createEmbeddedDocuments` call, so the prompt would only ever be
+  redundant or duplicate-causing here, never additive.
+- Skill "+N%" bonus suffixes (e.g. `"Dodge +10%"`) map directly onto
+  `system.advances.value` — confirmed from `skill.js#computeOwned()`
+  (`total.value = modifier.value + advances.value + characteristic.value`),
+  so `advances.value` is already a flat percentage, no /5-per-advance
+  conversion needed.
+- `createPrinceActor(region, prince, folder)` — creates the `npc` Actor:
+  `system.characteristics.*.initial` from `convertCharacteristics` (`ws`,
+  `bs`, `s`, `t`, `i` ← rolled Initiative, `ag` ← Agi, `dex` ← rolled
+  Dexterity, `int`, `wp`, `fel` — see `standard.js`/`char-gen.js` for the
+  system's actual field keys, which don't all match this module's more
+  readable internal names), career Item from `resolveCareerItem`,
+  skill/talent Items from `resolveNamedItems`, `system.details.species`
+  from the rolled race (narrative only, §2), `system.details.biography`
+  built from title/goal/principles/style/secrets/quirks/courtiers/
+  principality size/prior-career flavor text/`guidanceNotes`/missing-item
+  notes, filed into the folder from `getOrCreateActorFolder`. Wounds is
+  left for the system to auto-calculate (§2) — not set here at all.
 
 ### 5. Wiring
 
-- `region.mjs`: `princes: []` → `princes: { actorFolderId: null, entries:
-  [] }` (mirrors `ruins`'s shape); `isPhaseDone` gets a `princes` branch
+- `region.mjs`: `princes: []` → `princes: { entries: [] }`, with a new
+  top-level `actorFolderId: null` alongside `journalFolderId` (not nested
+  under `princes` — see §4). `isPhaseDone` gets a `princes` branch
   (`entries.length > 0`) alongside `geography`/`ruins`.
 - Generic `runPhase(region, "princes")` — no bespoke roller needed, same
-  reasoning as Ruins (no per-step "stop" condition).
+  reasoning as Ruins (no per-step "stop" condition, and no Geography-scene
+  dependency either — princes aren't placed on the scene, unlike Ruins).
 - `borderlands-wizard.mjs`: after a successful `runPhase(region, "princes")`,
-  no auto-opened sheet planned (unlike Ruins' single journal, there are
-  multiple Actors — a "N princes generated" notification is enough; GM
-  opens the ones they want from the Actors sidebar/folder).
+  no auto-opened sheet (unlike Ruins' single journal, there are multiple
+  Actors) — instead posts a `ui.notifications.info` with the count
+  generated (`BORDERLANDS.PrincesGenerated`), GM opens the ones they want
+  from the Actors sidebar/folder.
+
+### Implemented (2026-08-16, commit pending manual verification)
+
+Table 2-1..2-11 transcribed (`pdftotext -table`, cross-checked against
+`-layout`) and Table 2-1's 7 statblocks hand-converted to 4e using
+`Conversion_Rules.pdf` (also `-table`-verified) as a one-time reference —
+see inline comments in `tables/princes.mjs` for the handful of judgment
+calls this required (e.g. Conversion_Rules.pdf's own "Anointed Priest →
+Priest — Tier 1: Priest" entry contradicts its own "Initiate → Priest —
+Tier 1: Initiate" entry; corrected to Tier 3: High Priest, matching the
+book's own "ex-Initiate, ex-Priest" career chain). `Table 2-11: Titles`'
+bands were shifted by one in `-layout` mode (same failure mode as
+Geography's Table 1-1) — `-table` mode confirmed the corrected alphabetical
+ordering. 44 vitest tests passing (14 new for Princes), production build
+clean.
+
+**First round of manual verification (2026-08-16) found three bugs**, all
+fixed in `princes-actor.mjs`/`tables/princes.mjs` (see §4's updated
+description above for the pack-discovery fix in detail):
+1. Actor creation popped wfrp4e's own "Add Basic Skills?" prompt (answered
+   Yes → duplicated skills this phase already adds). Basic Skills are
+   wanted on these NPCs (makes them much easier to run at the table), so
+   the fix isn't to skip them — `resolveBasicSkills` now fetches the same
+   set directly (`game.wfrp4e.utility.allBasicSkills()`), deduped against
+   `prince.skills`, and adds it alongside this phase's own resolved
+   Items; `Actor.create(data, { skipItems: true })` then just suppresses
+   the redundant prompt itself.
+2. "Not found" biography notes listed Stealth and Ride — both are "Basic"
+   skills that ship in the wfrp4e **system's** own bundled compendium, not
+   `wfrp4e-core`'s, so the `wfrp4e-core`-only pack search missed them —
+   fixed by switching to `game.wfrp4e.utility.findExactName`/`findBaseName`,
+   which search every tagged pack regardless of which module owns it (the
+   same lookup wfrp4e itself uses).
+3. Biography guidance notes cited `Conversion_Rules.pdf` by name — not a
+   document the GM has open in Foundry (unlike `Renegade Crowns.pdf`,
+   which this whole module exists to automate) — rephrased to describe the
+   conversion fact itself instead of citing the source.
+
+Still pending: a full pass confirming the resolved Items/characteristics
+look correct on an actual generated Actor sheet, now that the popup/pack
+bugs are fixed.
+
+## Relationships phase design
+
+SPECS.md "RELATIONS GENERATION SUMMARY" — Tables 2-12 through 2-22
+(Renegade Crowns, PDF pages 37-43, book pages 35-41). Much smaller than
+Princes: no new statblocks, no compendium Items, just a nature/length/cause
+roll between pairs of already-generated princes, written up as journal
+entries. Requires **at least 2 princes to exist** — `generateRelationships`
+gates on `region.princes.entries.length >= 2` and throws otherwise, same
+pattern as Ruins gating on Geography's scene.
+
+### Key decisions locked in via AskUserQuestion
+
+- **Two relationships per prince, randomly paired, allowing repeats.**
+  For each prince in `region.princes.entries`, roll 2 relationships, each
+  against an independently-chosen random *other* prince (self excluded,
+  but the same partner can be picked twice, and a pair can end up with two
+  separate relationship rolls between them). This matches the book's own
+  explicit tolerance for messy results — "It is possible these random
+  results will seem deeply stupid... one lord is both allied and at war
+  with another" — rather than trying to dedupe pairs. With only 2 princes
+  total, both of a prince's rolls necessarily land on the same (only)
+  partner, which is the natural degenerate case, not an error.
+- **One JournalEntryPage per relationship**, in a single "`<Map Name>` -
+  Relationships" JournalEntry — same pattern as Ancient Ruins.
+
+### 1. Table data — `src/tables/relationships.mjs`
+
+Band tables, `lookupBand`-style like `tables/ruins.mjs`:
+
+- **Table 2-12: Diplomatic Relations** — 1d10, 10 types: Alliance,
+  Bitterness, Contempt, Envy, Fear, Hatred, Respect, Rivalry, Vengeance,
+  War.
+- **Table 2-13: Length of Relations** — d100 band, "6 months" through "50
+  years."
+- **Cause tables, one per relation type except Rivalry** ("Rivalry is the
+  default condition in the Border Princes and does not need an exact
+  cause" — no roll, no table, just the nature+length): Table 2-14 (Origins
+  of Alliance, 10 entries), 2-15 (Springs of Bitterness, 5), 2-16 (Grounds
+  of Contempt, 5), 2-17 (Seeds of Envy, 5), 2-18 (Sources of Fear, 5), 2-19
+  (Reasons for Hatred, 5), 2-20 (Grounds for Respect, 5), 2-21 (Things to
+  Avenge, 5). **Transcription risk flagged**: the `-layout` extraction of
+  2-15 through 2-21 shows the same row-shift misprint pattern Table 1-1
+  and Table 2-11 had (entry text one band off from its roll range) — every
+  one of these needs `-table`-mode re-verification before being trusted,
+  not just a copy from the `-layout` read.
+- **Table 2-22: Cause of War** — d10, but three of its five bands
+  *redirect* into another table instead of giving a final answer: 1-2
+  Conquest (final), 3-4 Envy (reroll Table 2-17), 5-6 Fear (reroll 2-18),
+  7-8 Hatred (reroll 2-19), 9-10 Vengeance (reroll 2-21). Needs a small
+  chained-lookup helper, not a single `lookupBand` call — mirrors
+  `rollOriginalPurpose`'s Oddity-column recursion in `generation/ruins.mjs`.
+- **Table 2-14's reinforcement re-roll**: "If you have generated an
+  alliance that has lasted for ten years or more, there must be a story
+  behind it. Roll a second time on Table 2-14 to determine what reinforced
+  the alliance... you could roll a third time for particularly old
+  alliances." The first threshold (10+ years) is mechanical — any Table
+  2-13 result of 10 years or more. The second ("particularly old") isn't
+  given a number by the book; **judgment call**: treat 25+ years as the
+  threshold for a third roll, flagged inline in the table file rather than
+  silently picked.
+
+### 2. Roll logic — `src/generation/relationships.mjs`
+
+- `pickRandomPartner(princes, excludeIndex)` — uniformly picks a random
+  *other* prince's index from `region.princes.entries` (pure, `Roll`-based,
+  unit-testable) — this replaces the book's manual "number the princes,
+  roll a d10/d100 to pick one" indirection (`The Parties` section), which
+  exists in the book only because the GM doesn't have a ready-indexed list
+  in front of them; this module already does.
+- `rollRelationshipCause(nature, length)` — dispatches to the right cause
+  table for `nature` (no roll at all for Rivalry), handles Table 2-22's
+  War redirect and Table 2-14's Alliance reinforcement re-roll(s).
+- `rollSingleRelationship(princes, princeAIndex)` — picks a partner via
+  `pickRandomPartner`, rolls Table 2-12 (nature) and 2-13 (length), then
+  `rollRelationshipCause`. Returns `{ princeAId, princeBId, nature,
+  length, cause }` (uses each prince's `actorId`, not array index, so the
+  relationship stays valid even if `region.princes.entries` gets
+  reordered — see the Princes-phase fix that added `prince.actorId`).
+- `rollRelationships(region)` — for every prince, calls
+  `rollSingleRelationship` twice. Pure, unit-testable with the
+  `__rollQueue` stub, exactly like `rollPrinces`.
+
+### 3. Materializing onto Foundry — `src/generation/relationships-journal.mjs`
+
+- `createRelationshipsJournal(region, relationships)` — reuses
+  `getOrCreateJournalFolder`; journal named `` `${sceneName} -
+  Relationships` ``, reused (pages appended) on repeat runs, same pattern
+  as `ruins-scene.mjs`. Each page's content links the two princes by
+  `@UUID[Actor.<actorId>]{<princeDisplayName>}` (Foundry's inline document
+  link syntax) so the GM can jump straight from the relationship writeup
+  to either prince's Actor sheet — `princeDisplayName` (tables/princes.mjs)
+  is reused here for exact-match display text.
+- `postRelationshipsSummary` (`relationships-chat.mjs`) — GM-only chat
+  message, same pattern as `ruins-chat.mjs`/`princes-chat.mjs`.
+
+### 4. Wiring
+
+- `region.mjs`: `relationships: []` → `relationships: { journalId: null,
+  entries: [] }` (mirrors `ruins`'s shape); `isPhaseDone` gets a
+  `relationships` branch.
+- `generateRelationships(region)` — throws if
+  `region.princes.entries.length < 2` ("Generate at least two princes
+  first — relationships need someone to have them with."), otherwise
+  calls `rollRelationships`, `createRelationshipsJournal`,
+  `postRelationshipsSummary`, generic `runPhase` flow (no bespoke roller).
+- `borderlands-wizard.mjs`: after a successful
+  `runPhase(region, "relationships")`, opens the relationships journal
+  sheet — same as Ruins' auto-open (a single journal makes sense to jump
+  to here, unlike Princes' multiple Actors).
 
 ### Not yet done for this phase
 
-This section is a design pass only, matching how Geography and Ancient
-Ruins were planned before being built — **no code for Princes has been
-written yet**. Before implementation starts, the Table 2-1..2-11 data needs
-transcribing — including hand-converting each Table 2-1 statblock's
-career/skills/talents to 4e using `Conversion_Rules.pdf` as a one-time
-reference (the largest single transcription task in the module so far, but
-smaller than originally scoped now that the Conversion_Rules tables
-themselves don't need to become shipped runtime data — only the small
-`RACE_CHARACTERISTIC_OFFSETS`/`RACE_NEW_CHARACTERISTIC_DICE` tables do) —
-and the exact `wfrp4e-core` compendium pack id(s) need confirming against a
-real Foundry world with that module installed.
+Design pass only, matching Geography/Ancient Ruins/Princes' pattern before
+being built — **no code for Relationships has been written yet**. Before
+implementation starts: transcribe Tables 2-12 through 2-22 with
+`-table`-mode verification (flagged above as a real misalignment risk,
+not just a precaution), and decide the "particularly old alliance" third
+reinforcement-roll threshold for real (currently a placeholder judgment
+call, 25+ years).
 
 ## Not in scope for this plan (future sessions)
 
-Relationships, Settlements, and Hazards phases — each needs its own table
-transcription + process design pass like this one, done when we get to it.
-Per the user's direction so far, their eventual Foundry representations
-are: Relationships → Journal entries; Settlements → Journal entries +
-placeables (same pattern as Ruins); Hazards is still open.
+Settlements and Hazards phases — each needs its own table transcription +
+process design pass like this one, done when we get to it. Per the user's
+direction so far, their eventual Foundry representations are: Settlements
+→ Journal entries + placeables (same pattern as Ruins); Hazards is still
+open.
 
 `Conversion_Rules.pdf` (2nd edition → 4th edition WFRP character conversion
 rules) is gitignored the same way as `Renegade Crowns.pdf`. Not needed for
