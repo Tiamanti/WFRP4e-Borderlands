@@ -1006,13 +1006,144 @@ Tests: `tests/tables/relationships.test.mjs` (band coverage, description
 completeness), `tests/generation/relationships.test.mjs` (roll-queue traces
 for every cause dispatch branch, pairing, and the two-per-prince loop).
 
+## Settlements phase design
+
+SPECS.md "COMMUNITIES SUMMARY" — Tables 3-1 through 3-7 (Renegade Crowns,
+book pages 42-49, PDF pages 44-51). All seven tables re-verified with
+`pdftotext -table` (no row-shift misprint found this time — `-table` and
+`-layout` agreed cleanly, unlike every dense table in Geography/Princes/
+Relationships).
+
+### Key decision locked in via AskUserQuestion
+
+**Journal-only, no scene placement.** Unlike Ancient Ruins, this module has
+no record of which grid cells belong to which prince's principality —
+Princes deliberately left `principalitySize` as a number only, GM-placed
+by hand ("size only — place on the map by hand"). The book's own placement
+rules are boundary-dependent ("if *this principality* contains a fertile
+valley, place the town there"), which can't be checked automatically
+without that boundary data. Two other options were considered — auto-place
+everything by searching the whole map for matching terrain regardless of
+which prince "owns" it (unfaithful to "this principality's fertile
+valley"), or auto-place only the settlements in the uncontrolled area
+(where the book's rule genuinely is boundary-free: "place them where you
+like") — but the user chose the simplest, fully-faithful option: **every
+settlement's journal page states the book's placement preference as text**
+(e.g. "Place in a Fertile Valley if the principality has one, else a Tor,
+else near a River on Plains, else Hills, else GM's choice"), and the GM
+places it by hand once they've decided the principality's actual
+boundaries — consistent with how principality size itself is already
+handled.
+
+### Process (per prince, then once more for the uncontrolled area)
+
+1. **Town check** (skipped for the uncontrolled area — "there are no towns
+   between principalities"): `1d100 + principalitySize` (the prince's
+   rolled square count). Total > 100 → the principality has a town (capped
+   at one — "extremely large principalities might contain more than one,
+   but that is beyond the scope of random generation").
+   - Population: `1000 + (3d10 × 100)`.
+   - Economic resources: `floor(population / 1000)` (minimum 1) resource
+     rolls on Table 3-3, **plus one more if the town's own Table 3-2 roll
+     came up "Economic Resource"** — the book's "may add further... the
+     number based on population is a minimum" is a genuine judgment call
+     on exactly how additive this is; treating a 3-2 "Economic Resource"
+     hit as +1 beyond the population floor is the reading used here,
+     flagged inline in the table/roll comments rather than silently
+     assumed.
+2. **Villages**: Table 3-1 (1d10, banded by principality size —
+   `principalitySize` < 80 = Small, 80–150 = Medium, > 150 = Large; the
+   uncontrolled area is always treated as Medium regardless of its actual
+   size, per the book) gives the village count. Each rolls Table 3-2 once.
+3. **Homesteads**: `1d10` interesting homesteads (same formula for both
+   principalities and the uncontrolled area — the book's "all villages
+   outside principalities have features of interest" is about *villages*
+   using the same Table 3-1 mechanic, not a different homestead count).
+   Each rolls Table 3-2 once.
+
+### Table 3-2: Community Features cascade
+
+The real complexity of this phase. One d100 roll per settlement (not
+banded evenly — 22 explicit bands transcribed in
+`tables/settlements.mjs`, ending in an open-ended `91+` band), with a
+**cumulative modifier that resets between settlements but not within
+one**:
+
+- **Economic Resource** (+10 to next roll on Table 3-2 for *this*
+  settlement): rolls once on Table 3-3 (Resource +2/Craft +1/Oddity/Market
+  bands, itself cumulative across multiple 3-3 rolls for the same
+  settlement — see the town resource-count rule above). Resource → Table
+  3-4 (13 named resources; gemstone/gold/silver mines auto-flag
+  Stronghold). Craft → Table 3-5 (16 named crafts; Gem Cutter/Goldsmith
+  auto-flag Stronghold). Oddity → Table 3-6 (10 flavor entries, terminal —
+  no further roll). Market is terminal but sticky: once a settlement rolls
+  Market, *later* Table 3-3 rolls for that same settlement that land on
+  Market are treated as Craft instead ("treat future results of Market as
+  Craft").
+- **Stronghold**, **Cultists**: terminal flags, just descriptive
+  (`RELATION`-style short description dictionaries, no further roll).
+- **Chokepoint**: terminal flag, but triggers one more Table 3-2 roll for
+  the same settlement ("roll again, and ignore further results of
+  Chokepoint" — so a second Chokepoint on the reroll is treated as
+  "nothing further," not a third roll).
+- **Special**: rolls on Table 3-7 (1d10): 1-2 **Roll Twice** on Table 3-2
+  again (same recursive-cap pattern as Princes' Secrets/Quirks — stop
+  once capped, matching the book's own "ignore it once the settlement
+  becomes ridiculous"); 3 Cultists (same flag as above); 4 Hospital; 5
+  Magical Effect; 6 **Monastery** (if rolled for a *town*, re-roll the
+  town's Table 3-2 result and apply Monastery to a village/homestead
+  generated for the same area instead — "the orders do not establish
+  their monasteries in centres of population"); 7 Monster; 8 **Templars**
+  (auto-flags Stronghold); 9 Witch; 10 Wizard. All ten are terminal,
+  paraphrased-description-only (no further sub-tables) — the extensive
+  prose for Templars/Witch/Wizard/Monster in the book is GM color, not
+  more mechanics.
+- **Negative roll = no feature at all** ("if your roll is a negative
+  result, there is no community feature") — reachable only via repeated
+  Cultists' `-10` modifier stacking past a low base roll; the mechanized
+  version treats any total ≤ 0 as `null`/no feature, same idea as Ruins'
+  band lookups but with an explicit floor instead of clamping to 1.
+
+### Data shape
+
+```js
+region.settlements = { journalId: null, entries: [] }
+```
+
+One entry per settlement: `{ ownerId (prince actorId, or null for the
+uncontrolled area), tier: "town"|"village"|"homestead", population,
+economicResources: [{ kind: "Resource"|"Craft"|"Oddity"|"Market", detail
+}], feature: null | { type: "Stronghold"|"Chokepoint"|"Cultists"|<Table
+3-7 result>, ... } }`. Exact shape gets finalized during implementation —
+this is the rough contract, not a locked schema.
+
+### Foundry representation
+
+One shared "`<Map Name>` - Settlements" JournalEntry, **one page per
+prince plus one page for the uncontrolled area** — same pattern
+Relationships just adopted (a GM looking up a prince wants everything
+about their principality, including its settlements, in one place), not
+one page per settlement. Each settlement is a subsection within its
+owning page, including the book's placement-preference text per the
+locked-in decision above. No scene `Note`s.
+
+### Not yet done for this phase
+
+Design pass only — **no code for Settlements has been written yet**. Next
+steps when implementation starts: `src/tables/settlements.mjs` (Tables
+3-1 through 3-7 plus description dictionaries), `src/generation/
+settlements.mjs` (per-prince + uncontrolled-area loop, the Table 3-2
+cascade, `generateSettlements` orchestrator), `settlements-journal.mjs`
+(one page per prince/uncontrolled-area, rebuilt-in-place on re-run the
+same way `relationships-journal.mjs` now works), `settlements-chat.mjs`,
+wiring into `region.mjs`/`borderlands-wizard.mjs`, and tests mirroring
+the `relationships.test.mjs`/`princes.test.mjs` roll-queue style.
+
 ## Not in scope for this plan (future sessions)
 
-Settlements and Hazards phases — each needs its own table transcription +
-process design pass like this one, done when we get to it. Per the user's
-direction so far, their eventual Foundry representations are: Settlements
-→ Journal entries + placeables (same pattern as Ruins); Hazards is still
-open.
+Hazards phase — needs its own table transcription + process design pass
+like every other phase got, done when we get to it. Its eventual Foundry
+representation is still open.
 
 `Conversion_Rules.pdf` (2nd edition → 4th edition WFRP character conversion
 rules) is gitignored the same way as `Renegade Crowns.pdf`. Not needed for
