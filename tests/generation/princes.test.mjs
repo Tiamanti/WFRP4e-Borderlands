@@ -89,6 +89,18 @@ describe("rollPrinces", () => {
         expect(princes[0].secrets).toEqual(["Black Sheep", "Chaos Cultist"]);
     });
 
+    it("caps principalitySize at 100 squares even when Table 1-1's own formula rolls higher", async () => {
+        const region = createRegion();
+        globalThis.__rollQueue = [
+            5, 10, 50, 1, 1, 1, 1, 1, 1, 1, 1, 1, // count, type, race, careerLevel, careerProgress, goal, principle, style, secret, quirk, courtiers, title
+            91, 350, // principality: Table 1-1 roll 91 -> Plains, "1d10 * 50" formula rolls 350 uncapped
+            10, 10, // initiative, dexterity
+        ];
+
+        const princes = await rollPrinces(region);
+        expect(princes[0].principalitySize).toBe(100);
+    });
+
     it("Table 2-9 Roll Twice ignores further 10s (re-rolls) instead of recursing again", async () => {
         const region = createRegion();
         globalThis.__rollQueue = [

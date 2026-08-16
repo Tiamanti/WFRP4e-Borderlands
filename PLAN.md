@@ -594,7 +594,16 @@ so it never actually becomes ~90 rows of runtime code.
   The book's own guidance here ("apply common sense... borders defined by
   mountains, rivers, cliffs...") is exactly as GM-judgment-heavy as River
   routing in Geography, so it gets the same treatment: rolled/recorded,
-  drawn by the GM.
+  drawn by the GM. **Post-verification correction**: Table 1-1's size
+  formulas run as high as `1d10 * 50` (max 500) — reused unclamped, a
+  lucky high roll on one prince next to unlucky low rolls on the others
+  produced exactly the lopsided region (350 squares vs. 59 combined) the
+  user flagged after testing. `rollPrincipalitySize` now clamps the result
+  to `MAX_PRINCIPALITY_SIZE = 100` (`generation/princes.mjs`). Knock-on
+  effect: this makes Settlements' "Large" principality band (Table 3-1,
+  `principalitySize > 150`) permanently unreachable — harmless (every
+  principality just resolves as Small or Medium for village-count
+  purposes), flagged here rather than silently left unnoticed.
 - **NPCs get filed into a shared Actor folder**, the same pattern as
   Geography/Ruins' shared JournalEntry folder — a `"<Map Name>"` `Folder`
   of `type: "Actor"` (Folders are typed per-document-type in Foundry, so
@@ -1127,23 +1136,225 @@ one page per settlement. Each settlement is a subsection within its
 owning page, including the book's placement-preference text per the
 locked-in decision above. No scene `Note`s.
 
+### Status: implemented
+
+`src/tables/settlements.mjs` (Tables 3-1 through 3-7, all re-verified with
+`pdftotext -table` — no row-shift misprint turned up this time, unlike
+every dense table in Geography/Princes/Relationships), `src/generation/
+settlements.mjs` (`rollTownCheck`, `rollVillageCount`, `rollHomesteadCount`,
+`rollEconomicResourceDetail`, `rollCommunityFeatures`, `rollSettlement`,
+`rollOwnerSettlements`, `generateSettlements` orchestrator),
+`settlements-journal.mjs` (one page per prince plus one for the
+uncontrolled area, rebuilt in place on re-run — same pattern
+`relationships-journal.mjs` established), `settlements-chat.mjs`; wired
+into `region.mjs` (`settlements: { journalId, entries }`, `isPhaseDone`)
+and `borderlands-wizard.mjs` (auto-opens the journal, same as Ruins/
+Relationships).
+
+Two implementation decisions made while coding, refining what's written
+above:
+
+- **Table 3-2's chain resolves into every feature it actually produces**,
+  not one — `rollCommunityFeatures` returns an array. Chokepoint's bonus
+  reroll and Special's Table 3-7 (including its own Roll Twice recursion)
+  can each add more entries; a `maxFeatures` cap (6, mirroring Princes'
+  `maxSecrets`) stops runaway chains, matching the book's own "ignore it
+  once the settlement becomes ridiculous."
+- **A town's economic-resource "population minimum" is a simple top-up**,
+  not a separate `+1` for an Economic-Resource hit as originally sketched
+  above: `rollSettlement` counts whatever Resource/Craft/Oddity/Market
+  entries the Table 3-2 chain already produced, then rolls flat
+  `rollEconomicResourceDetail` calls (continuing the same per-settlement
+  `resourceState` — modifier and the Market-sticky flag both carry over)
+  until the array reaches `max(1, floor(population / 1000))`. This is
+  simpler than the `+1` rule floated during planning and doesn't
+  double-count a chain-produced Economic Resource against the floor.
+
+Tests: `tests/tables/settlements.test.mjs` (band/description coverage),
+`tests/generation/settlements.test.mjs` (roll-queue traces for the
+Chokepoint reroll, the negative-roll-means-no-feature floor, Special's
+Roll Twice recursion, the Monastery-for-town redirect, the Market-sticky
+rule, and the population-based resource top-up) — all matched their
+hand-computed expected roll sequences on the first run. 98 vitest tests
+total, production build clean.
+
+**Post-generation tweak**: each owner's page now sorts its settlements
+largest-population-first, so a Town (when one exists) always leads,
+followed by villages and homesteads in descending size — easier to scan
+than roll order. **Not yet manually verified in a live Foundry world.**
+
+## Hazards phase design
+
+SPECS.md "HAZARDS SUMMARY" — Tables 4-1 through 4-12 (Renegade Crowns,
+book pages 56-63, PDF pages 58-65). All twelve tables transcribed and
+cross-verified with `pdftotext -table` (one real misalignment found and
+fixed: Table 4-8's Giant column — `-layout` had shifted it, `-table`
+corrected it to Guardian 1 / Raider 2-8 / Reclusive 9-10 / Tribute none).
+This is the last of the six phases — once it's built, `wfrp4e-borderlands`
+covers the full *Renegade Crowns* generation process end to end.
+
+### Key decisions locked in via AskUserQuestion
+
+- **Table 4-1's lair count is GM-chosen, not random** ("it is something
+  you need to decide, in broad terms, rather than randomly generate") —
+  the GM picks a campaign style (Few/Moderate/Many), *then* Table 4-1 is
+  rolled against that style's column. Surfaced as a minimal `DialogV2`
+  prompt (style select + Roll button) when the GM clicks Hazards' Roll
+  button — the same interactive-step pattern `GeographyRoller` already
+  established, just a single field instead of a whole grid-fill loop, so
+  no need to reuse that class directly.
+- **Dead Lords (Vampires/Mummies) auto-generate a full personality** —
+  the book explicitly suggests reusing Princes' Goal/Principle/Style/
+  Secrets/Quirks tables (2-5 through 2-9) for them ("there is no reason
+  not to use the rules for generating princes"), calling it optional; the
+  module does it automatically for every Dead Lord, consistent with how
+  thoroughly every other phase already mechanizes book-optional steps.
+  Reuses `PRINCES` module's `GOAL_TABLE`/`PRINCIPLES_TABLE`/`STYLE_TABLE`/
+  `SECRETS_TABLE`/`QUIRKS_TABLE` (and their `*_DESCRIPTIONS` dictionaries)
+  directly rather than duplicating them — no new personality tables needed
+  in `tables/hazards.mjs`. No Actor gets created for a Dead Lord, though:
+  unlike Princes' 7 hand-converted archetypes, the book gives no 2e
+  statblocks for Vampires/Mummies to convert from, so there's nothing to
+  build an NPC Actor's characteristics/skills/talents out of — this stays
+  journal text only, same as every other Hazards lair.
+- **No scene placement, journal-only** — following Settlements'
+  precedent, but on an even stronger textual basis this time: the book's
+  own "Placing Lairs" section explicitly disclaims automation ("there are
+  no random tables in this section... a random table created with no
+  knowledge of your mapped area could not produce sensible results"). Every
+  lair's journal page states the book's placement heuristics as text (see
+  below) for the GM to act on by hand.
+
+### Process
+
+1. GM picks a lair-count style via the dialog above; roll Table 4-1 (1d10
+   against that style's column) → lair count.
+2. For each lair: roll Table 4-2 (1d10: 1-2 Chaos, 3-7 Greenskin, 8
+   Monster, 9-10 Undead) → dispatch to that branch.
+
+### Chaos branch (Tables 4-3, 4-4, 4-5)
+
+- Table 4-3 (1d10) gives a creature count *and* a modifier to Table 4-4
+  *and* either "no roll" (count 1: a solo leader, no followers at all) or
+  a row index for Table 4-5.
+- Table 4-4 (1d100 + Table 4-3's modifier — the modifier can push the
+  total as high as 120, so the table's own bands run past 100) → leader
+  type: Daemon, Chaos Warrior, Minotaur, Mutant, Gor (Beastman), or
+  Bestigor (Beastman).
+- Table 4-5 needs **no independent roll at all** — its row is Table
+  4-3's own modifier value, directly (`row = min(5, 1 + modifier)`, the
+  table's own "5+" notation *is* that cap), and its column is picked by
+  the Table 4-4 leader's type (Gor and Bestigor both use the "Beastman"
+  column). Gives a follower-composition string (e.g. "Beastmen and
+  Mutants").
+- A Chaos Warrior leader additionally gets the book's explicit sub-roll:
+  1d10, ≤7 raider, ≥8 seeks rulership.
+- **Judgment call**: which of the four Chaos Gods a rolled Daemon serves
+  has no die mechanic in the book at all (purely descriptive prose per
+  god) — left as GM-facing flavor text naming all four rather than
+  auto-picked, since there's genuinely nothing to roll.
+
+### Greenskin branch (Table 4-6)
+
+- Roll once per column (Snotlings, Goblins, Trolls, Common Orcs, Black
+  Orcs) — each a **direct 1d10 row lookup, not banded**, independently
+  giving a headcount (0 is a valid result for any column).
+- The leader is a member of whichever column, scanning right-to-left, is
+  the first with a nonzero count (Black Orcs > Common Orcs > Trolls >
+  Goblins > Snotlings) — "most bands of Greenskins are led by Orcs."
+- All-zero result (every column rolls 0): reroll the whole set from
+  scratch ("start again from Snotlings"), capped at a handful of retries
+  like every other reroll loop in this module, for safety against a
+  pathological stubbed `Roll` in tests.
+- Total population > 1000: rolls a raiding-area size by reusing Table
+  1-2's Special Feature size formula (the same mechanism Princes reuses
+  for principality size) — recorded as text only ("raiding area: N
+  squares — place between principalities, moving inconvenient villages to
+  the edge"), no scene placement, per the locked-in journal-only decision.
+
+### Monster branch (Tables 4-7, 4-8)
+
+- Table 4-7 (1d10) → type: Giant, Great Eagle, Griffon, Hippogriff,
+  Hydra, Jabberwock, Manticore, Wyvern.
+- Headcount is a **per-type hardcoded formula**, not a shared table:
+  Giant `floor(1d10 / 2)`; Great Eagle `ceil(1d10 / 3)`; Griffon/
+  Hippogriff/Hydra/Jabberwock/Manticore always 1 (all explicitly solitary
+  in the book's own text); Wyvern 1, or 2 on a 1d10 roll of 9-10.
+- Table 4-8 → attitude (Guardian/Raider/Reclusive/Tribute), banded
+  per-monster-type — several monster types simply can't roll certain
+  attitudes (a `--` band in the book means that attitude isn't reachable
+  for that column at all, not a gap to fill in).
+
+### Undead branch (Tables 4-9..4-12)
+
+- Table 4-9 (1d10, banded) → class: Dead Lord, Lone Menace, or Shambling
+  Horde.
+- **Dead Lord**: Table 4-10 (1d10, banded) → Mummy, or one of four
+  Vampire bloodlines (Blood Dragon, von Carstein Exile, Necrarch,
+  Strigoi). Always gets a Shambling Horde as servants (rolls Table 4-12
+  again, below) plus the auto-generated personality from the locked-in
+  decision above.
+- **Lone Menace**: Table 4-11 (1d10, banded) → Banshee, Spectre, Wight,
+  or Wraith.
+- **Shambling Horde**: Table 4-12's own distinct mechanic — roll the
+  table's "First Roll" row (1d10, banded into 4 starting-column picks:
+  Dire Wolves/Skeletons/Vampire Bats/Zombies), then roll **exactly 4
+  times total**, once per column, continuing in wrap-around order from
+  the starting column (Dire Wolves → Skeletons → Vampire Bats → Zombies →
+  Dire Wolves...) — each roll banded 1-10+ against whichever column is
+  current, giving a headcount added to the horde, and applying a shared
+  cumulative modifier (the table's own "Notes" column, e.g. "+2 to next
+  roll") that carries across all 4 rolls — same "resets per horde, not
+  within one" shape as Settlements' Table 3-2 modifier chain. After
+  assembly: curse check = `1d10 + floor(hordeSize / 25)`; 10 or higher
+  means the horde carries a curse (anything it kills rises to join it).
+  A Dead Lord's servant horde reuses this exact same roller.
+
+### Placing Lairs
+
+No automation, on the book's own explicit authority (quoted above). Every
+lair's journal page states the book's placement heuristics as text: tied
+to a specific community → within 1-2 squares of it; a pure raider → 3-4
+squares out; reclusive/solitary → a couple of squares into difficult
+terrain, away from any settlement; a large (>1000) Greenskin lair's
+raiding-area size (rolled above) → place between principalities, moving
+any inconvenient villages to the edge.
+
+### Data shape
+
+```js
+region.hazards = { journalId: null, entries: [] }
+```
+
+One entry per lair: `{ type: "Chaos"|"Greenskin"|"Monster"|"Undead",
+...type-specific fields }` — exact per-branch shape gets finalized during
+implementation, not locked here.
+
+### Foundry representation
+
+One shared "`<Map Name>` - Hazards" JournalEntry, **one page per lair**
+(numbered, "Lair 1: <type>" etc.) — matches Ancient Ruins' one-page-per-
+entry pattern rather than Relationships/Settlements' one-page-per-owner
+pattern, since a lair has no natural "owner" to group by the way a
+relationship or settlement has a prince. No scene `Note`s, per the
+locked-in journal-only decision.
+
 ### Not yet done for this phase
 
-Design pass only — **no code for Settlements has been written yet**. Next
-steps when implementation starts: `src/tables/settlements.mjs` (Tables
-3-1 through 3-7 plus description dictionaries), `src/generation/
-settlements.mjs` (per-prince + uncontrolled-area loop, the Table 3-2
-cascade, `generateSettlements` orchestrator), `settlements-journal.mjs`
-(one page per prince/uncontrolled-area, rebuilt-in-place on re-run the
-same way `relationships-journal.mjs` now works), `settlements-chat.mjs`,
-wiring into `region.mjs`/`borderlands-wizard.mjs`, and tests mirroring
-the `relationships.test.mjs`/`princes.test.mjs` roll-queue style.
+Design pass only — **no code for Hazards has been written yet**. Next
+steps when implementation starts: `src/tables/hazards.mjs` (Tables 4-2
+through 4-12 plus description dictionaries — Table 4-1 lives with the
+dialog instead, similar to how Geography's grid math sits next to its
+roller), `src/generation/hazards.mjs` (one roll function per branch,
+`generateHazards` orchestrator), a small `apps/lair-style-dialog.mjs` (or
+similar) for the Table 4-1 style prompt, `hazards-journal.mjs`,
+`hazards-chat.mjs`, wiring into `region.mjs`/`borderlands-wizard.mjs`
+(special-casing Hazards' Roll button to open the style dialog first, the
+same way Geography's already special-cased to open `GeographyRoller`),
+and tests mirroring the `settlements.test.mjs`/`relationships.test.mjs`
+roll-queue style.
 
 ## Not in scope for this plan (future sessions)
-
-Hazards phase — needs its own table transcription + process design pass
-like every other phase got, done when we get to it. Its eventual Foundry
-representation is still open.
 
 `Conversion_Rules.pdf` (2nd edition → 4th edition WFRP character conversion
 rules) is gitignored the same way as `Renegade Crowns.pdf`. Not needed for

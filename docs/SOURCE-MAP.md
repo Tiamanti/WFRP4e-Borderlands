@@ -19,9 +19,9 @@
 
 ## src/generation/
 
-Orchestration and one module per SPECS.md process. Settlements and Hazards still throw
-`"not yet implemented"` — see `SPECS.md` → Table locations when filling each in. Geography,
-Ancient Ruins, Princes, and Relationships are implemented (PLAN.md).
+Orchestration and one module per SPECS.md process. Hazards still throws
+`"not yet implemented"` — see `SPECS.md` → Table locations when filling it in. Geography,
+Ancient Ruins, Princes, Relationships, and Settlements are implemented (PLAN.md).
 
 | File | Exports | SPECS.md process |
 |------|---------|-------------------|
@@ -42,7 +42,9 @@ Ancient Ruins, Princes, and Relationships are implemented (PLAN.md).
 | `relationships.mjs` | `generateRelationships`, `rollRelationships`, `rollSingleRelationship`, `rollRelationshipCause`, `pickRandomPartner` | RELATIONS GENERATION SUMMARY (Tables 2-12..2-22). Two relationships per prince, each against an independently-chosen random other prince (self excluded, repeats allowed). `generateRelationships` is the `runPhase`-compatible orchestrator (throws if fewer than 2 princes exist); the rest are pure and unit-tested |
 | `relationships-journal.mjs` | `createRelationshipsJournal` | Creates/updates "`<Map Name>` - Relationships" — one page **per prince** (not per relationship), each relationship rendered as a subsection naming the *other* prince. Alliance/Rivalry/War are mutual and appear on both princes' pages; every other nature is one prince's feeling *about* the other and appears only on the feeling prince's page, not their target's (`MUTUAL_RELATIONS`, `tables/relationships.mjs`). Pages are keyed by a `princeId` flag so a re-run rebuilds a prince's page in place instead of duplicating it — isolated from the pure logic above so that stays unit-testable |
 | `relationships-chat.mjs` | `postRelationshipsSummary` | Posts the newly-generated relationships (nature/length/cause per pair) to chat as a GM-only ("selfroll") message |
-| `settlements.mjs` | `generateSettlements` | COMMUNITIES SUMMARY (Tables 3-1, 3-2) |
+| `settlements.mjs` | `generateSettlements`, `rollTownCheck`, `rollVillageCount`, `rollHomesteadCount`, `rollEconomicResourceDetail`, `rollCommunityFeatures`, `rollSettlement`, `rollOwnerSettlements` | COMMUNITIES SUMMARY (Tables 3-1..3-7). Generated once per prince's principality plus once for the uncontrolled area (`ownerId: null`). `rollCommunityFeatures` resolves Table 3-2's full recursive chain (Chokepoint's one bonus reroll, Special's Table 3-7 dispatch including its own Roll Twice recursion and a town's Monastery result redirecting to the next village/homestead via `onMonasteryForTown`) into every feature it actually produces, not just one; a town's economic resources are topped up to its population-based minimum on top of whatever that chain already rolled. `generateSettlements` is the `runPhase`-compatible orchestrator (throws if the Princes phase hasn't run); the rest are pure and unit-tested |
+| `settlements-journal.mjs` | `createSettlementsJournal` | Creates/updates "`<Map Name>` - Settlements" — one page **per prince plus one for the uncontrolled area** (mirrors `relationships-journal.mjs`'s per-prince pattern), settlements on each page sorted largest-population-first (so a Town, when one exists, always leads), each rendered as a subsection with its features and the book's placement-preference text (no scene `Note`s — settlements are journal-only, see PLAN.md). Pages are keyed by an `ownerId` flag so a re-run rebuilds an owner's page in place instead of duplicating it — isolated from the pure logic above so that stays unit-testable |
+| `settlements-chat.mjs` | `postSettlementsSummary` | Posts the newly-generated settlements (tier/owner/population/Stronghold/feature count per settlement) to chat as a GM-only ("selfroll") message |
 | `hazards.mjs` | `generateHazards` | HAZARDS SUMMARY (Tables 4-1..4-12) |
 
 ## src/tables/
@@ -54,6 +56,7 @@ Ancient Ruins, Princes, and Relationships are implemented (PLAN.md).
 | `princes.mjs` | `PRINCE_TYPE_TABLE`, `PRINCE_TYPES`, `RACE_TABLE`, `isImpossibleRaceType`, `CAREER_STAGE_LEVEL_TABLE`, `CAREER_STAGE_PROGRESS_TABLE`, `GOAL_TABLE`, `PRINCIPLES_TABLE`, `STYLE_TABLE`, `SECRETS_TABLE`, `QUIRKS_TABLE`, `COURTIERS_TABLE`, `TITLE_TABLE` | Tables 2-1..2-11 data. `PRINCE_TYPES`' 7 example statblocks are hand-converted to 4e once here (career/skills/talents already 4e names) using `Conversion_Rules.pdf` as a one-time reference — see PLAN.md for why this isn't a runtime lookup. `TITLE_TABLE`'s bands were corrected from a `-layout` row-shift misprint, confirmed with `-table` mode |
 | `race-conversion.mjs` | `NEW_CHARACTERISTIC_DICE` | Just the Initiative/Dexterity generation dice (2e has neither) — race conversion is otherwise unused: princes are NPCs, and race stays narrative flavor rather than adjusting characteristics, per direction |
 | `relationships.mjs` | `DIPLOMATIC_RELATIONS_TABLE`, `RELATION_DESCRIPTIONS`, `MUTUAL_RELATIONS`, `LENGTH_OF_RELATIONS_TABLE`, `ALLIANCE_ORIGIN_TABLE`, `ALLIANCE_ORIGIN_DESCRIPTIONS`, `BITTERNESS_CAUSE_TABLE`, `CONTEMPT_CAUSE_TABLE`, `ENVY_CAUSE_TABLE`, `FEAR_CAUSE_TABLE`, `HATRED_CAUSE_TABLE`, `RESPECT_CAUSE_TABLE`, `VENGEANCE_CAUSE_TABLE`, `*_CAUSE_DESCRIPTIONS` (one per nature above), `WAR_CAUSE_TABLE`, `WAR_CAUSE_DESCRIPTIONS`, `CAUSE_TABLES`, `CAUSE_DESCRIPTIONS` | Tables 2-12..2-22 data. `MUTUAL_RELATIONS` (`["Alliance", "Rivalry", "War"]`) flags which natures describe the pair mutually vs. one prince's one-directional feeling about the other — consumed by `relationships-journal.mjs` to decide which prince's page a relationship appears on. Every d10 cause table (2-15..2-21) was re-verified with `pdftotext -table` after `-layout` mode row-shifted them by one band — the same misprint pattern already seen in Table 1-1 and Table 2-11. `CAUSE_TABLES`/`CAUSE_DESCRIPTIONS` key by Table 2-12's relation name for dispatch; Rivalry and War are deliberately absent (Rivalry has no cause table at all; War uses `WAR_CAUSE_TABLE` directly and redirects into another nature's table — see `generation/relationships.mjs`) |
+| `settlements.mjs` | `VILLAGE_COUNT_TABLE`, `principalitySizeBand`, `COMMUNITY_FEATURES_TABLE`, `COMMUNITY_FEATURE_DESCRIPTIONS`, `ECONOMIC_RESOURCE_TABLE`, `RESOURCES_TABLE`, `STRONGHOLD_RESOURCES`, `CRAFTS_TABLE`, `STRONGHOLD_CRAFTS`, `ODDITIES_TABLE`, `SPECIAL_FEATURES_TABLE`, `SPECIAL_FEATURE_DESCRIPTIONS`, `PLACEMENT_GUIDANCE` | Tables 3-1..3-7 data — no row-shift misprint turned up here, unlike every dense table in Geography/Princes/Relationships (`-table` and `-layout` agreed cleanly). `COMMUNITY_FEATURES_TABLE`'s 45 bands encode Table 3-2's per-band modifier deltas directly (`+10`/`-10`/`0`); its final band is open-ended (`max: Infinity`) since the cumulative modifier can push a roll past 100. `STRONGHOLD_RESOURCES`/`STRONGHOLD_CRAFTS` are the Table 3-4/3-5 entries that auto-flag a settlement as a Stronghold. `PLACEMENT_GUIDANCE` is the GM-facing placement text used in place of scene placement, per the locked-in "journal-only" decision (PLAN.md) |
 
 ## templates/
 
@@ -75,7 +78,7 @@ strings in `ruins-scene.mjs` (written once at creation time, never re-rendered).
     ruins: { journalId: null, entries: [] },
     princes: { entries: [] },
     relationships: { journalId: null, entries: [] },
-    settlements: [],
+    settlements: { journalId: null, entries: [] },
     hazards: [],
 }
 ```
@@ -118,6 +121,21 @@ a plain cause string for every other nature. `region.relationships.journalId` po
 shared "`<Map Name>` - Relationships" JournalEntry, reused (new pages appended) on repeat
 runs rather than recreated.
 
-For the remaining two phases: each `generate*` function receives the region built so far
-(so later phases can react to earlier results) and returns the fields it produced;
-`runPhase` merges the result back into the region object in place.
+`region.settlements.entries` accumulates one object per settlement (`{ tier: "town"|
+"village"|"homestead", ownerId, population, features, isStronghold }`, `ownerId` a prince's
+Actor id or `null` for the uncontrolled area) each time Settlements runs — one town (if the
+principality's Table 3-1 roll clears 100) plus a Table 3-1 village count and `1d10`
+homesteads per prince, and once more for the uncontrolled area (always treated as
+"medium," never gets a town). `features` is an array (Table 3-2's roll and its recursion can
+produce more than one), each entry either `{ kind: "Resource"|"Craft"|"Oddity"|"Market",
+detail, isStronghold }` (an Economic Resource hit) or `{ type: "Stronghold"|"Chokepoint"|
+"Cultists"|"Hospital"|"MagicalEffect"|"Monastery"|"Monster"|"Templars"|"Witch"|"Wizard" }`.
+No scene placement — every settlement's journal page carries the book's placement
+preference as text instead (`PLACEMENT_GUIDANCE`, `tables/settlements.mjs`), per the
+locked-in "journal-only" decision (PLAN.md). `region.settlements.journalId` points at the
+shared "`<Map Name>` - Settlements" JournalEntry, reused (pages rebuilt in place) on repeat
+runs rather than recreated.
+
+For the remaining phase (Hazards): `generateHazards` receives the region built so far and
+will return the fields it produces; `runPhase` merges the result back into the region
+object in place, same as every implemented phase above.

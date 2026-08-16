@@ -27,12 +27,17 @@ describe("region", () => {
 
     it("phase generators are stubbed pending table data", async () => {
         const region = createRegion();
-        await expect(runPhase(region, "settlements")).rejects.toThrow(/not yet implemented/);
+        await expect(runPhase(region, "hazards")).rejects.toThrow(/not yet implemented/);
     });
 
     it("relationships requires at least two princes", async () => {
         const region = createRegion();
         await expect(runPhase(region, "relationships")).rejects.toThrow(/Princes phase first/);
+    });
+
+    it("settlements requires the Princes phase to have run", async () => {
+        const region = createRegion();
+        await expect(runPhase(region, "settlements")).rejects.toThrow(/Princes phase first/);
     });
 
     it("geography is driven by the Geography Roller dialog, not runPhase", async () => {
@@ -52,16 +57,19 @@ describe("region", () => {
             expect(isPhaseDone(region, "ruins")).toBe(false);
             expect(isPhaseDone(region, "princes")).toBe(false);
             expect(isPhaseDone(region, "relationships")).toBe(false);
+            expect(isPhaseDone(region, "settlements")).toBe(false);
 
             region.geography.log.push({ type: "river" });
             region.ruins.entries.push({ type: "Dwarf" });
             region.princes.entries.push({});
             region.relationships.entries.push({});
+            region.settlements.entries.push({});
 
             expect(isPhaseDone(region, "geography")).toBe(true);
             expect(isPhaseDone(region, "ruins")).toBe(true);
             expect(isPhaseDone(region, "princes")).toBe(true);
             expect(isPhaseDone(region, "relationships")).toBe(true);
+            expect(isPhaseDone(region, "settlements")).toBe(true);
         });
     });
 });

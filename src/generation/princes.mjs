@@ -16,6 +16,13 @@ import { NEW_CHARACTERISTIC_DICE } from "../tables/race-conversion.mjs";
 import { getOrCreateActorFolder, createPrinceActor } from "./princes-actor.mjs";
 import { postPrincesSummary } from "./princes-chat.mjs";
 
+// Table 1-1's terrain size formulas range as high as "1d10 * 50" (max 500), which the book
+// never questions since it's just describing a patch of land, not comparing princes against
+// each other — but reused unclamped for Principality size, a lucky high roll on one prince
+// (observed: 350 squares) next to unlucky low rolls on the others (59 squares *combined*)
+// produces exactly the kind of lopsided region the user flagged. Capped per direction.
+const MAX_PRINCIPALITY_SIZE = 100;
+
 /**
  * "Principality: roll on Table 1-1, ignore the type of terrain, and roll the indicated
  * dice to generate a size." Every row is either a terrain row (has a `sizeFormula`) or a
@@ -28,7 +35,8 @@ async function rollPrincipalitySize() {
         const roll = await new Roll("1d100").evaluate();
         entry = GEOGRAPHY_TABLE[roll.total];
     } while (entry.type !== "terrain");
-    return (await new Roll(entry.sizeFormula).evaluate()).total;
+    const size = (await new Roll(entry.sizeFormula).evaluate()).total;
+    return Math.min(size, MAX_PRINCIPALITY_SIZE);
 }
 
 /**
