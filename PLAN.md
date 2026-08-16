@@ -554,10 +554,27 @@ Items**, not just descriptive text. That last part is only possible because
 `Conversion_Rules.pdf` (PDF pages 3-13) turns out to give an exact,
 mechanical 2e→4e characteristic-conversion formula plus ~90-entry Career,
 Skill, and Talent lookup tables — this isn't GM-judgment territory the way
-River placement or Ruin Age are; it's bounded, mechanical data, just a lot
-of it.
+River placement or Ruin Age are; it's bounded, mechanical data. Per the
+decision below, that ~90-row Career/Skill/Talent data gets *applied* once
+by hand during transcription rather than shipped as a live lookup engine,
+so it never actually becomes ~90 rows of runtime code.
 
 ### Key decisions locked in via AskUserQuestion
+
+- **Convert once, at transcription time, not at roll time.** Originally
+  planned as a live ~90-row Career/Skill/Talent lookup engine
+  (`tables/conversion.mjs`) run against every generated prince. Per your
+  direction ("run conversion before we implement so we don't do it every
+  time"), the 7 Table 2-1 statblocks are instead **hand-converted to 4e once
+  while transcribing them**, using `Conversion_Rules.pdf`'s tables purely as
+  a one-time reference during that transcription pass — the PDF's ~90-row
+  tables themselves never get encoded as shipped runtime data. `tables/princes.mjs`
+  stores the *already-4e* career/skill/talent names directly. This only works
+  because the Table 2-1 statblocks are Human-baseline and every 2e→4e
+  characteristic for Human is "remain the same" — see the revised §1/§2/§3
+  below for exactly what's still resolved at runtime (only race, which is
+  rolled per prince) versus baked into the table (career/skill/talent,
+  Human-baseline characteristics).
 
 - **Full linked Items.** Converted Career/Skill/Talent names are matched
   against the `wfrp4e-core` module's compendium packs at runtime and added
@@ -590,15 +607,35 @@ Renegade Crowns tables, band/lookup style like `tables/ruins.mjs`:
 
 - **Table 2-1: Type of Prince** — 7 types (Bandit, Knight, Mercenary,
   Merchant, Politician, Priest, Wizard) as a band table, **each entry also
-  carries its full example 2e statblock**: `characteristics` (WS BS S T Ag
-  Int WP Fel — 4e's Agi, no 2e Dex/Init yet), `secondaryProfile` (A W SB TB
-  M Mag IP FP), `career` (the 2e career chain string, e.g. `"Outlaw Chief
-  (ex-Veteran, ex-Outlaw)"`), `skills` (array of 2e skill names, some with
-  a `+N%` bonus suffix), `talents` (array of 2e talent names), `armour`,
-  `weapons`, `trappings`. **Transcription task, not yet done**: PDF pages
-  22-26 (book pages 20-24) — verify with `pdftotext -table` the same way
-  Geography's Table 1-1 was, since these are dense multi-line blocks prone
-  to the same column-misalignment risk in `-layout` mode.
+  carries its full example statblock, hand-converted to 4e at transcription
+  time** (see the top-level decision above — not a runtime conversion):
+  `characteristics` (WS BS S T Ag Int WP Fel, as **4e Human-baseline
+  values** — for Human the 2e printed number *is* the 4e number per
+  `Conversion_Rules.pdf`'s "remain the same" rule for every one of these
+  eight, so this is a direct transcription, not a converted one; Initiative
+  and Dexterity are omitted here entirely since 2e has no equivalent stat —
+  they're rolled fresh at runtime, see §3), `secondaryProfile` (A W SB TB M
+  Mag IP FP), `career` as an **already-4e, already-parsed** structure (e.g.
+  `{ career: "Outlaw", tier: 3, level: "Outlaw Chief", priorCareers:
+  ["Veteran", "Outlaw"] }` — the 2e chain string and the
+  `CAREER_CONVERSION` lookup both collapse into this one hand-done mapping),
+  `skills` (array of **already-4e** skill names with specialization already
+  resolved, e.g. `"Charm"`, `"Lore (Reikland)"` — some with a `+N%` bonus
+  suffix carried over from the 2e entry), `talents` (array of **already-4e**
+  talent names), `armour`, `weapons`, `trappings`. A handful of 2e
+  skills/talents have no clean 4e Item equivalent (per
+  `Conversion_Rules.pdf`'s own guidance-text fallbacks, e.g. Meditation) —
+  those are recorded as plain strings in a `guidanceNotes` array instead of
+  `skills`/`talents`, and become biography text rather than Items (§4).
+  **Transcription task, not yet done — now the single biggest task in this
+  phase**: PDF pages 22-26 (book pages 20-24) for the raw 2e statblocks,
+  cross-referenced against `Conversion_Rules.pdf` PDF pages 3-13 for the
+  Career/Skill/Talent name mapping, done by hand once per statblock. Verify
+  the Renegade Crowns extraction with `pdftotext -table` the same way
+  Geography's Table 1-1 was (dense multi-line blocks, same
+  column-misalignment risk in `-layout` mode); the Conversion_Rules tables
+  only need a one-time `-table` re-check as a lookup aid, since none of
+  their rows get encoded verbatim into shipped data.
 - **Table 2-2: Princely Races** — 8 entries (Dwarf, Elf, Halfling, Human ×5
   cultural flavors — Border Princes/Bretonnian/Empire/Tilean/Other). The
   book's own "impossible combination" rule (no Dwarf/Halfling
@@ -622,34 +659,33 @@ Renegade Crowns tables, band/lookup style like `tables/ruins.mjs`:
   `geography.mjs`'s `GEOGRAPHY_TABLE` (for principality size, Table 1-1
   reused — "ignore the type of terrain, and roll the indicated dice").
 
-### 2. Conversion data — `src/tables/conversion.mjs`
+### 2. Race conversion data — `src/tables/race-conversion.mjs`
 
-Transcribed from `Conversion_Rules.pdf` (PDF pages 3-13). **Not yet
-transcribed — this is the first real implementation task for this phase**,
-and given the ~90-row Career/Skill/Talent tables' size, each needs the same
-`-table`-mode re-extraction + sanity-checking discipline used for Geography
-and Ruins before being trusted.
+Much smaller than originally planned, and the **only** part of
+`Conversion_Rules.pdf` that still needs to be shipped as runtime data —
+Career/Skill/Talent conversion is now a one-time transcription-aid only
+(§1), not runtime data, because a prince's career/skills/talents don't
+depend on the race that gets rolled for them. Race *does* get rolled per
+prince (Table 2-2), and does change characteristics, so that one piece
+stays a small live lookup:
 
-- `CHARACTERISTIC_CONVERSION` — keyed by race (`Human`, `Elf`, `Dwarf`,
+- `RACE_CHARACTERISTIC_OFFSETS` — keyed by race (`Human`, `Elf`, `Dwarf`,
   `Halfling`; the 5 Human cultural flavors from Table 2-2 all map to the
-  `Human` row), one entry per characteristic with an `action`: `"same"`
-  (default), `{ type: "offset", amount: N }` (WS/BS/S/T/Agi/Int/WP/Fel/M —
-  applied directly to the statblock's printed 2e value), `{ type:
-  "generate", formula }` (Initiative, Dexterity — 2e has no equivalent,
-  roll fresh with the race's given dice), or `{ type: "remove" }` (Attacks
-  — 4e has no such characteristic). Wounds is **always** recomputed via 4e's
-  own formula (`SB + 2×TB + WPB`, using the *converted* S/T/WP), not looked
-  up from this table at all.
-- `CAREER_CONVERSION`, keyed by 2e career name → `{ career: "4e Career
-  name", tier: N, level: "4e Level name" }` or `{ guidance: "text" }` for
-  the handful of 2e careers with no official 4e equivalent (e.g. Fieldwarden,
-  Jailer, Kislevite Kossar, Targeteer, Vampire Hunter, Ghost Strider —
-  the book gives a substitute + reasoning instead of a clean mapping).
-- `SKILL_CONVERSION`, `TALENT_CONVERSION` — 2e name → 4e name (specialization
-  bracket text, e.g. `"(Strategy/Tactics)"`, carries over unchanged; only the
-  base skill name before the bracket gets looked up), or a `{ guidance:
-  "text" }` fallback for entries like Meditation ("no official rules...
-  substitute for Channelling advances") that don't cleanly become an Item.
+  `Human` row, i.e. no offset, since the Table 2-1 baseline is already
+  Human-converted per §1). One entry per characteristic
+  (WS/BS/S/T/Agi/Int/WP/Fel/M), each either `0` (no change — true for every
+  Human characteristic) or `±N`, applied on top of the statblock's baked-in
+  4e Human-baseline value. Bounded, ~4 rows × 9 columns — transcribed once
+  from `Conversion_Rules.pdf` PDF pages 3-13, no `-table`/`-layout` risk at
+  this size (small enough to eyeball against the rendered PDF page
+  directly).
+- `RACE_NEW_CHARACTERISTIC_DICE` — keyed by race, `{ initiative: formula,
+  dexterity: formula }` — 2e has neither stat, so these are always
+  "generate fresh," never an offset, regardless of race.
+- Attacks (2e-only, no 4e equivalent) is simply never carried over — no
+  table entry needed. Wounds is **always** recomputed via 4e's own formula
+  (`SB + 2×TB + WPB`, using the race-adjusted S/T/WP), not looked up from
+  any table.
 
 ### 3. Roll + conversion logic — `src/generation/princes.mjs`
 
@@ -662,36 +698,36 @@ Pure functions, mirroring `ruins.mjs`'s structure:
   title (2-11), principality size (Table 1-1 reroll). Returns plain roll
   results — no Foundry Actor/Item creation here, so this stays unit-testable
   with the `__rollQueue` stub exactly like `rollAncientRuins`.
-- `convertCharacteristics(statblock, race)` — applies `CHARACTERISTIC_CONVERSION`
-  to a Table 2-1 type's baseline statblock for the rolled race: offsets for
-  WS/BS/S/T/Agi/Int/WP/Fel/M, fresh `Roll`s for Initiative/Dexterity, drops
-  Attacks, recomputes Wounds from the converted S/T/WP bonuses. Pure,
-  Roll-based, unit-testable.
-- `convertCareerChain(careerString)` — parses `"Outlaw Chief (ex-Veteran,
-  ex-Outlaw)"` into `["Outlaw Chief", "Veteran", "Outlaw"]`, maps the
-  *first* (current) name through `CAREER_CONVERSION` for the Actor's active
-  career; the `ex-` entries become flavor text in the biography ("formerly
-  a Veteran, formerly an Outlaw... (4e-equivalent names)"), not separate
-  Items — an Actor only has one current Career in 4e.
-- `convertSkillsAndTalents(skills, talents)` — maps each 2e name (splitting
-  off any specialization bracket first) through `SKILL_CONVERSION`/
-  `TALENT_CONVERSION`; returns `{ resolved: [{4e name, specialization}],
-  guidance: ["text for entries with no clean equivalent"] }` — `guidance`
-  entries become biography notes instead of Items.
+- `convertCharacteristics(statblock, race)` — applies
+  `RACE_CHARACTERISTIC_OFFSETS` to a Table 2-1 type's (already Human-baseline
+  4e) `characteristics` for the rolled race, fresh `Roll`s for
+  Initiative/Dexterity via `RACE_NEW_CHARACTERISTIC_DICE`, recomputes Wounds
+  from the race-adjusted S/T/WP bonuses. Pure, Roll-based, unit-testable —
+  this is the only conversion step that still runs per-generation, since
+  it's the only piece that depends on the randomly-rolled race.
+- No `convertCareerChain`/`convertSkillsAndTalents` functions — removed from
+  this design. `prince.career`/`.skills`/`.talents`/`.guidanceNotes` are
+  read directly off the Table 2-1 entry (§1); they're already 4e and don't
+  vary by race, so there's nothing left to convert at roll time.
 
 ### 4. Materializing onto Foundry — `src/generation/princes-actor.mjs`
 
 - `getOrCreateActorFolder(region)` — same pattern as `journal-folder.mjs`,
   new file since Folders are typed per document-type (`type: "Actor"`);
   stores `region.actorFolderId`.
-- `resolveCompendiumItems(names, itemType)` — looks up `SKILL_CONVERSION`/
-  `TALENT_CONVERSION`/`CAREER_CONVERSION` output names against
+- `resolveCompendiumItems(names, itemType)` — looks up the **already-4e**
+  career/skill/talent names straight off the Table 2-1 entry (§1) against
   `wfrp4e-core`'s compendium pack(s) (pack id(s) to be confirmed against a
   live world at implementation time — `wfrp4e`'s own bundled pack is a
   single `wfrp4e.basic` pack with mixed item types, `wfrp4e-core` may be
-  structured the same way or split per type). Matches by exact name first;
-  for a specialized skill/talent with no exact match (e.g. compendium only
-  has the generic `"Lore (any)"` template), creates the Item with
+  structured the same way or split per type). Matching is simpler than
+  originally scoped, since there's no more 2e→4e semantic ambiguity to
+  resolve here at runtime — that judgment call was already made once, by
+  hand, while transcribing the table (§1). What's left is exact-name
+  matching against whatever `wfrp4e-core` actually ships (plus normal
+  compendium drift/typo fallback): matches by exact name first; for a
+  specialized skill/talent with no exact match (e.g. compendium only has
+  the generic `"Lore (any)"` template), creates the Item with
   `skipSpecialisationChoice: true` and sets the resolved specialization
   name directly, rather than triggering wfrp4e's interactive specialization
   picker mid-batch-creation (see `skill.js#_handleSpecialisationChoice` —
@@ -701,10 +737,10 @@ Pure functions, mirroring `ruins.mjs`'s structure:
   of silently failing).
 - `createPrinceActor(region, prince)` — creates the `npc`-type Actor:
   `system.characteristics.*.initial` from `convertCharacteristics`, career
-  Item from the resolved current career, skill/talent Items from
+  Item from `prince.career` (already parsed — §1), skill/talent Items from
   `resolveCompendiumItems`, `system.details.biography` built from
   race/title/goal/principles/style/secrets/quirks/courtiers/principality
-  size/career chain flavor text/guidance notes, filed into the folder from
+  size/prior-career flavor text/`guidanceNotes`, filed into the folder from
   `getOrCreateActorFolder`.
 
 ### 5. Wiring
@@ -723,11 +759,15 @@ Pure functions, mirroring `ruins.mjs`'s structure:
 
 This section is a design pass only, matching how Geography and Ancient
 Ruins were planned before being built — **no code for Princes has been
-written yet**. Before implementation starts, the Table 2-1..2-11 data and
-all three `Conversion_Rules.pdf` tables need transcribing and verifying
-(the largest single transcription task in the module so far), and the
-exact `wfrp4e-core` compendium pack id(s) need confirming against a real
-Foundry world with that module installed.
+written yet**. Before implementation starts, the Table 2-1..2-11 data needs
+transcribing — including hand-converting each Table 2-1 statblock's
+career/skills/talents to 4e using `Conversion_Rules.pdf` as a one-time
+reference (the largest single transcription task in the module so far, but
+smaller than originally scoped now that the Conversion_Rules tables
+themselves don't need to become shipped runtime data — only the small
+`RACE_CHARACTERISTIC_OFFSETS`/`RACE_NEW_CHARACTERISTIC_DICE` tables do) —
+and the exact `wfrp4e-core` compendium pack id(s) need confirming against a
+real Foundry world with that module installed.
 
 ## Not in scope for this plan (future sessions)
 
