@@ -36,6 +36,14 @@
         "type": "system",
         "compatibility": {}
       }
+    ],
+    "requires": [
+      {
+        "id": "wfrp4e-core",
+        "type": "module",
+        "compatibility": {},
+        "reason": "Princes phase looks up Career/Skill/Talent Items from the Core Rulebook compendiums to build converted 4e NPC Actors."
+      }
     ]
   },
   "socket": false

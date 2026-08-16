@@ -545,17 +545,198 @@ tests requiring a fuller Foundry stub.
   and opens the right page when clicked. Re-running the phase should add
   more pages/pins to the same JournalEntry rather than creating a second one.
 
+## Princes phase design
+
+Much bigger than Geography or Ruins: 11 Renegade Crowns tables (2-1..2-11,
+PDF pages 21-35), 7 full 2e example statblocks (one per Prince Type), and —
+per your direction — real 4e NPC Actors with **linked Career/Skill/Talent
+Items**, not just descriptive text. That last part is only possible because
+`Conversion_Rules.pdf` (PDF pages 3-13) turns out to give an exact,
+mechanical 2e→4e characteristic-conversion formula plus ~90-entry Career,
+Skill, and Talent lookup tables — this isn't GM-judgment territory the way
+River placement or Ruin Age are; it's bounded, mechanical data, just a lot
+of it.
+
+### Key decisions locked in via AskUserQuestion
+
+- **Full linked Items.** Converted Career/Skill/Talent names are matched
+  against the `wfrp4e-core` module's compendium packs at runtime and added
+  as real embedded Items on the Actor, not just listed as text. Because of
+  this, `module.json` now declares `relationships.requires: [{id:
+  "wfrp4e-core", type: "module"}]` — the wfrp4e system's own bundled
+  `wfrp4e.basic` pack is not the full compendium; `wfrp4e-core` (the
+  official Core Rulebook content module) is what actually has the full
+  Skill/Talent/Career library this phase needs to look items up in.
+- **One-shot batch**, same pattern as Ancient Ruins: reuse Table 1-3 (the
+  book explicitly allows this — "If desired, roll on Table 1-3... use the
+  result as the number of princes") to roll a count, then generate all
+  princes in one click.
+- **Principality**: roll only the *size* (Table 1-1 reroll, ignoring
+  terrain, using its existing size-formula-by-row logic from
+  `tables/geography.mjs`) and log it on the prince — no auto-placement.
+  The book's own guidance here ("apply common sense... borders defined by
+  mountains, rivers, cliffs...") is exactly as GM-judgment-heavy as River
+  routing in Geography, so it gets the same treatment: rolled/recorded,
+  drawn by the GM.
+- **NPCs get filed into a shared Actor folder**, the same pattern as
+  Geography/Ruins' shared JournalEntry folder — a `"<Map Name>"` `Folder`
+  of `type: "Actor"` (Folders are typed per-document-type in Foundry, so
+  this is a second folder alongside the JournalEntry one, not a shared
+  one). `region.actorFolderId` alongside the existing `region.journalFolderId`.
+
+### 1. Table data — `src/tables/princes.mjs`
+
+Renegade Crowns tables, band/lookup style like `tables/ruins.mjs`:
+
+- **Table 2-1: Type of Prince** — 7 types (Bandit, Knight, Mercenary,
+  Merchant, Politician, Priest, Wizard) as a band table, **each entry also
+  carries its full example 2e statblock**: `characteristics` (WS BS S T Ag
+  Int WP Fel — 4e's Agi, no 2e Dex/Init yet), `secondaryProfile` (A W SB TB
+  M Mag IP FP), `career` (the 2e career chain string, e.g. `"Outlaw Chief
+  (ex-Veteran, ex-Outlaw)"`), `skills` (array of 2e skill names, some with
+  a `+N%` bonus suffix), `talents` (array of 2e talent names), `armour`,
+  `weapons`, `trappings`. **Transcription task, not yet done**: PDF pages
+  22-26 (book pages 20-24) — verify with `pdftotext -table` the same way
+  Geography's Table 1-1 was, since these are dense multi-line blocks prone
+  to the same column-misalignment risk in `-layout` mode.
+- **Table 2-2: Princely Races** — 8 entries (Dwarf, Elf, Halfling, Human ×5
+  cultural flavors — Border Princes/Bretonnian/Empire/Tilean/Other). The
+  book's own "impossible combination" rule (no Dwarf/Halfling
+  Wizards/Priests — re-roll race) is mechanical, implement it directly, no
+  need to ask.
+- **Tables 2-3/2-4: Current Career / Career Stage** — rolled and recorded
+  as flavor text on the prince (e.g. *"Third career, about one-third
+  completed"*) — the book gives no formula for how earlier/later career
+  stages change the example statline (that data lives in the WFRP2 core
+  book, which isn't a source we have), so these don't feed into the
+  characteristic conversion; every prince still starts from the Table 2-1
+  type's baseline statblock.
+- **Tables 2-5..2-9: Goal, Principles, Style, Secrets, Quirks** — band
+  tables with a "Roll Twice" result on Secrets (2-8, up to 4 total, book
+  caps it there) and Quirks (2-9, re-roll future 10s, allow a repeated
+  result to "count double" per the book's text) — both need a small
+  recursive/looping roll helper, not just a single `lookupBand` call.
+- **Table 2-10: Courtiers** — band table, count only (0/1/3/4/6/8/10/12/15).
+- **Table 2-11: Titles** — 18-entry band table.
+- Reuses `ruins.mjs`'s `lookupBand` (import, don't reimplement) and
+  `geography.mjs`'s `GEOGRAPHY_TABLE` (for principality size, Table 1-1
+  reused — "ignore the type of terrain, and roll the indicated dice").
+
+### 2. Conversion data — `src/tables/conversion.mjs`
+
+Transcribed from `Conversion_Rules.pdf` (PDF pages 3-13). **Not yet
+transcribed — this is the first real implementation task for this phase**,
+and given the ~90-row Career/Skill/Talent tables' size, each needs the same
+`-table`-mode re-extraction + sanity-checking discipline used for Geography
+and Ruins before being trusted.
+
+- `CHARACTERISTIC_CONVERSION` — keyed by race (`Human`, `Elf`, `Dwarf`,
+  `Halfling`; the 5 Human cultural flavors from Table 2-2 all map to the
+  `Human` row), one entry per characteristic with an `action`: `"same"`
+  (default), `{ type: "offset", amount: N }` (WS/BS/S/T/Agi/Int/WP/Fel/M —
+  applied directly to the statblock's printed 2e value), `{ type:
+  "generate", formula }` (Initiative, Dexterity — 2e has no equivalent,
+  roll fresh with the race's given dice), or `{ type: "remove" }` (Attacks
+  — 4e has no such characteristic). Wounds is **always** recomputed via 4e's
+  own formula (`SB + 2×TB + WPB`, using the *converted* S/T/WP), not looked
+  up from this table at all.
+- `CAREER_CONVERSION`, keyed by 2e career name → `{ career: "4e Career
+  name", tier: N, level: "4e Level name" }` or `{ guidance: "text" }` for
+  the handful of 2e careers with no official 4e equivalent (e.g. Fieldwarden,
+  Jailer, Kislevite Kossar, Targeteer, Vampire Hunter, Ghost Strider —
+  the book gives a substitute + reasoning instead of a clean mapping).
+- `SKILL_CONVERSION`, `TALENT_CONVERSION` — 2e name → 4e name (specialization
+  bracket text, e.g. `"(Strategy/Tactics)"`, carries over unchanged; only the
+  base skill name before the bracket gets looked up), or a `{ guidance:
+  "text" }` fallback for entries like Meditation ("no official rules...
+  substitute for Channelling advances") that don't cleanly become an Item.
+
+### 3. Roll + conversion logic — `src/generation/princes.mjs`
+
+Pure functions, mirroring `ruins.mjs`'s structure:
+
+- `rollPrinces(region)` — rolls Table 1-3 for a count, then per prince:
+  type (2-1), race (2-2, re-rolling on an impossible Wizard/Priest +
+  Dwarf/Halfling combination), current career + stage (2-3/2-4, flavor
+  only), goal/principles/style/secrets/quirks (2-5..2-9), courtiers (2-10),
+  title (2-11), principality size (Table 1-1 reroll). Returns plain roll
+  results — no Foundry Actor/Item creation here, so this stays unit-testable
+  with the `__rollQueue` stub exactly like `rollAncientRuins`.
+- `convertCharacteristics(statblock, race)` — applies `CHARACTERISTIC_CONVERSION`
+  to a Table 2-1 type's baseline statblock for the rolled race: offsets for
+  WS/BS/S/T/Agi/Int/WP/Fel/M, fresh `Roll`s for Initiative/Dexterity, drops
+  Attacks, recomputes Wounds from the converted S/T/WP bonuses. Pure,
+  Roll-based, unit-testable.
+- `convertCareerChain(careerString)` — parses `"Outlaw Chief (ex-Veteran,
+  ex-Outlaw)"` into `["Outlaw Chief", "Veteran", "Outlaw"]`, maps the
+  *first* (current) name through `CAREER_CONVERSION` for the Actor's active
+  career; the `ex-` entries become flavor text in the biography ("formerly
+  a Veteran, formerly an Outlaw... (4e-equivalent names)"), not separate
+  Items — an Actor only has one current Career in 4e.
+- `convertSkillsAndTalents(skills, talents)` — maps each 2e name (splitting
+  off any specialization bracket first) through `SKILL_CONVERSION`/
+  `TALENT_CONVERSION`; returns `{ resolved: [{4e name, specialization}],
+  guidance: ["text for entries with no clean equivalent"] }` — `guidance`
+  entries become biography notes instead of Items.
+
+### 4. Materializing onto Foundry — `src/generation/princes-actor.mjs`
+
+- `getOrCreateActorFolder(region)` — same pattern as `journal-folder.mjs`,
+  new file since Folders are typed per document-type (`type: "Actor"`);
+  stores `region.actorFolderId`.
+- `resolveCompendiumItems(names, itemType)` — looks up `SKILL_CONVERSION`/
+  `TALENT_CONVERSION`/`CAREER_CONVERSION` output names against
+  `wfrp4e-core`'s compendium pack(s) (pack id(s) to be confirmed against a
+  live world at implementation time — `wfrp4e`'s own bundled pack is a
+  single `wfrp4e.basic` pack with mixed item types, `wfrp4e-core` may be
+  structured the same way or split per type). Matches by exact name first;
+  for a specialized skill/talent with no exact match (e.g. compendium only
+  has the generic `"Lore (any)"` template), creates the Item with
+  `skipSpecialisationChoice: true` and sets the resolved specialization
+  name directly, rather than triggering wfrp4e's interactive specialization
+  picker mid-batch-creation (see `skill.js#_handleSpecialisationChoice` —
+  that dialog is meant for a human adding one skill at a time, not a batch
+  of ~15 per generated prince). Any name that still can't be resolved logs
+  a warning and is skipped (added to the biography's guidance list instead
+  of silently failing).
+- `createPrinceActor(region, prince)` — creates the `npc`-type Actor:
+  `system.characteristics.*.initial` from `convertCharacteristics`, career
+  Item from the resolved current career, skill/talent Items from
+  `resolveCompendiumItems`, `system.details.biography` built from
+  race/title/goal/principles/style/secrets/quirks/courtiers/principality
+  size/career chain flavor text/guidance notes, filed into the folder from
+  `getOrCreateActorFolder`.
+
+### 5. Wiring
+
+- `region.mjs`: `princes: []` → `princes: { actorFolderId: null, entries:
+  [] }` (mirrors `ruins`'s shape); `isPhaseDone` gets a `princes` branch
+  (`entries.length > 0`) alongside `geography`/`ruins`.
+- Generic `runPhase(region, "princes")` — no bespoke roller needed, same
+  reasoning as Ruins (no per-step "stop" condition).
+- `borderlands-wizard.mjs`: after a successful `runPhase(region, "princes")`,
+  no auto-opened sheet planned (unlike Ruins' single journal, there are
+  multiple Actors — a "N princes generated" notification is enough; GM
+  opens the ones they want from the Actors sidebar/folder).
+
+### Not yet done for this phase
+
+This section is a design pass only, matching how Geography and Ancient
+Ruins were planned before being built — **no code for Princes has been
+written yet**. Before implementation starts, the Table 2-1..2-11 data and
+all three `Conversion_Rules.pdf` tables need transcribing and verifying
+(the largest single transcription task in the module so far), and the
+exact `wfrp4e-core` compendium pack id(s) need confirming against a real
+Foundry world with that module installed.
+
 ## Not in scope for this plan (future sessions)
 
-Princes, Relationships, Settlements, and Hazards phases — each needs its own
-table transcription + process design pass like this one, done when we get to
-it. Per the user's direction so far, their eventual Foundry representations
-are: Princes → NPC Actors; Relationships → Journal entries; Settlements →
-Journal entries + placeables (same pattern as Ruins); Hazards is still open.
+Relationships, Settlements, and Hazards phases — each needs its own table
+transcription + process design pass like this one, done when we get to it.
+Per the user's direction so far, their eventual Foundry representations
+are: Relationships → Journal entries; Settlements → Journal entries +
+placeables (same pattern as Ruins); Hazards is still open.
 
-A second source PDF has been added: `Conversion_Rules.pdf` (2nd edition →
-4th edition WFRP character conversion rules) — relevant to the **Princes**
-phase, since *Renegade Crowns* is a 2e book and generated princes will need
-their statistics converted to build a 4e NPC Actor. Not needed for Geography.
-Housekeeping for later: gitignore this PDF the same way as `Renegade
-Crowns.pdf` (currently only the latter is listed in `.gitignore`).
+`Conversion_Rules.pdf` (2nd edition → 4th edition WFRP character conversion
+rules) is gitignored the same way as `Renegade Crowns.pdf`. Not needed for
+Geography or Ancient Ruins — only Princes.
