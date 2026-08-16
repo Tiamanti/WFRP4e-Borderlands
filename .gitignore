@@ -5,7 +5,9 @@ foundryconfig.json
 foundry-path.js
 foundry-path.mjs
 
-# Copyrighted source book (and any full-text extraction of it) — obtain from
-# publisher, do not commit.
+# Copyrighted source books (and any full-text extraction of them) — obtain
+# from publisher, do not commit.
 Renegade Crowns.pdf
 docs/RENEGADE-CROWNS-TEXT.txt
+Conversion_Rules.pdf
+docs/CONVERSION-RULES-TEXT.txt
