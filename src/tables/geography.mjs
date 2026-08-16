@@ -179,3 +179,36 @@ export const VEGETATION_DESCRIPTIONS = {
     Scrubland: "Tough, low bushes — poor fodder, no useful timber, and hard to clear for farming.",
     Desert: "One-off vegetation variant printed on row 71 of Table 1-1 only — treat as Barren.",
 };
+
+/**
+ * Drawing `fillAlpha` per vegetation, denser growth reading as more opaque — lets a Barren
+ * Hills tile read visually differently from a Forested Hills tile despite sharing the same
+ * `FEATURE_COLORS` fill color. `DEFAULT_VEGETATION_OPACITY` covers Scrubland and every cell
+ * with no vegetation qualifier at all (row 68's plain "Swamps", every overwritten Special
+ * Feature cell).
+ */
+export const VEGETATION_OPACITY = {
+    Forested: 1,
+    Grassy: 0.8,
+    Scrubland: 0.6,
+    Barren: 0.4,
+    Desert: 0.4,
+};
+export const DEFAULT_VEGETATION_OPACITY = VEGETATION_OPACITY.Scrubland;
+
+/**
+ * Relative elevation per terrain type — Plains/Badlands/Swamps are all treated as equally
+ * "low ground" (the book doesn't rank them against each other), Hills mid, Mountains high.
+ * Consumed by `geography-rivers.mjs`'s walk: a river step is only legal if it doesn't climb
+ * to a strictly higher tier than the cell it's leaving. "Isolated Mountain" (a Special
+ * Feature, placed before rivers specifically so this applies) ranks the same as Mountains —
+ * it's a literal mountain, rivers shouldn't flow uphill onto/through it either.
+ */
+export const ELEVATION_TIER = {
+    Mountains: 2,
+    "Isolated Mountain": 2,
+    Hills: 1,
+    Plains: 0,
+    Badlands: 0,
+    Swamps: 0,
+};

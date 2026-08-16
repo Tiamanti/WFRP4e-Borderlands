@@ -1,8 +1,8 @@
-// Creates the "<Map Name> - Geography" JournalEntry when the GM ends the phase — one
-// entry per unique terrain/river/special feature actually rolled, each with its book
-// description (from src/tables/geography.mjs), filed into the region's shared journal
-// folder (journal-folder.mjs). Foundry-side effect, not unit tested — see PLAN.md's note
-// on geography-scene.mjs for why.
+// Creates the "<Map Name> - Geography" JournalEntry once generateGeography finishes rolling
+// and placing everything — one entry per unique terrain/river/special feature actually
+// rolled, each with its book description (from src/tables/geography.mjs), filed into the
+// region's shared journal folder (journal-folder.mjs). Foundry-side effect, not unit tested
+// — see PLAN.md's note on geography-scene.mjs for why.
 
 import { TERRAIN_DESCRIPTIONS, VEGETATION_DESCRIPTIONS } from "../tables/geography.mjs";
 import { getOrCreateJournalFolder } from "./journal-folder.mjs";
@@ -34,17 +34,20 @@ function renderGeographyPageHtml(descriptions) {
         .join("");
 }
 
-/** Creates the Geography JournalEntry (one page, one paragraph per terrain/feature type encountered). */
-export async function createGeographyJournal(region) {
+/** Creates the Geography JournalEntry: a placement summary line, then one paragraph per terrain/feature type encountered. */
+export async function createGeographyJournal(region, log, { regions = [], rivers = [], cliffs = [] } = {}) {
     const folder = await getOrCreateJournalFolder(region);
-    const descriptions = collectFeatureDescriptions(region.geography.log);
+    const descriptions = collectFeatureDescriptions(log);
+    const summary = `<p>${regions.length} terrain region${regions.length === 1 ? "" : "s"}, `
+        + `${rivers.length} river${rivers.length === 1 ? "" : "s"}, `
+        + `${cliffs.length} cliff${cliffs.length === 1 ? "" : "s"} placed.</p>`;
 
     const journal = await JournalEntry.create({
         name: `${region.geography.sceneName} - Geography`,
         folder: folder.id,
         pages: [{
             name: "Geography",
-            text: { content: renderGeographyPageHtml(descriptions), format: CONST.JOURNAL_ENTRY_PAGE_FORMATS.HTML },
+            text: { content: summary + renderGeographyPageHtml(descriptions), format: CONST.JOURNAL_ENTRY_PAGE_FORMATS.HTML },
         }],
     });
     region.geography.journalId = journal.id;

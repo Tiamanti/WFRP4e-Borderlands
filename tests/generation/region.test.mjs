@@ -40,11 +40,6 @@ describe("region", () => {
         await expect(runPhase(region, "settlements")).rejects.toThrow(/Princes phase first/);
     });
 
-    it("geography is driven by the Geography Roller dialog, not runPhase", async () => {
-        const region = createRegion();
-        await expect(runPhase(region, "geography")).rejects.toThrow(/Geography Roller/);
-    });
-
     it("ruins requires Geography's scene to exist first", async () => {
         const region = createRegion();
         await expect(runPhase(region, "ruins")).rejects.toThrow(/Geography phase first/);

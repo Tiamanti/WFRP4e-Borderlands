@@ -19,21 +19,3 @@
     text-decoration: line-through;
     opacity: 0.7;
 }
-
-.borderlands-geography-roller__status {
-    margin: 0 0 0.5rem;
-    font-weight: bold;
-}
-
-.borderlands-geography-roller__log {
-    max-height: 240px;
-    overflow-y: auto;
-    margin: 0 0 0.5rem;
-    padding-left: 1.25rem;
-}
-
-.borderlands-geography-roller__actions {
-    display: flex;
-    justify-content: flex-end;
-    gap: 0.5rem;
-}

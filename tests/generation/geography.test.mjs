@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { rollGeographyStep, rollSpecialFeature } from "../../src/generation/geography.mjs";
+import { rollGeographyStep, rollSpecialFeature, rollGeographyBatch } from "../../src/generation/geography.mjs";
 
 describe("geography rolls", () => {
     beforeEach(() => {
@@ -85,6 +85,31 @@ describe("geography rolls", () => {
             const result = await rollGeographyStep(10, { banLargeRegions: true, mapSquares: 400 });
             expect(result.type).toBe("special");
             expect(result.feature).toBe("Fertile Valley");
+        });
+    });
+
+    describe("rollGeographyBatch", () => {
+        it("stops once cumulative terrain size alone meets map capacity", async () => {
+            globalThis.__rollQueue = [1, 4]; // 1d100=1 -> Plains Barren; size roll = 4, meets a 2x2=4 map
+            const { log } = await rollGeographyBatch({ width: 2, height: 2 });
+            expect(log).toHaveLength(1);
+            expect(log[0].type).toBe("terrain");
+        });
+
+        it("excludes river and special feature rolls from the terrain-size budget", async () => {
+            // Roll 1: total 10 -> River (no size, doesn't count). Roll 2: total 1+10 bonus =
+            // 11 -> Plains, size roll 2, meets a 1x2=2 map only once this 2nd roll lands.
+            globalThis.__rollQueue = [10, 1, 2];
+            const { log } = await rollGeographyBatch({ width: 1, height: 2 });
+            expect(log).toHaveLength(2);
+            expect(log[0].type).toBe("river");
+            expect(log[1].type).toBe("terrain");
+        });
+
+        it("stops at maxRolls as a safety cap even if capacity was never reached", async () => {
+            globalThis.__rollQueue = [1, 1, 1, 1, 1, 1]; // 3 terrain rolls of size 1 each — far under a 100x100 map
+            const { log } = await rollGeographyBatch({ width: 100, height: 100, maxRolls: 3 });
+            expect(log).toHaveLength(3);
         });
     });
 });

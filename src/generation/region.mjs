@@ -25,7 +25,7 @@ export function createRegion({ sceneName = "Borderlands", mapSize = { width: 20,
         // one "<Map Name>" folder holds Geography's, Ruins', etc. journals together.
         journalFolderId: null,
         actorFolderId: null,
-        geography: { sceneId: null, sceneName, mapSize, journalId: null, log: [], stoppedReason: null },
+        geography: { sceneId: null, sceneName, mapSize, journalId: null, log: [] },
         ruins: { journalId: null, entries: [] },
         princes: { entries: [] },
         relationships: { journalId: null, entries: [] },

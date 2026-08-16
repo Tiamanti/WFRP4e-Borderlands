@@ -1,5 +1,4 @@
 import { REGION_PHASES, createRegion, runPhase, isPhaseDone } from "../generation/region.mjs";
-import GeographyRoller from "./geography-roller.mjs";
 import { promptLairStyle } from "./lair-style-dialog.mjs";
 
 const { ApplicationV2, HandlebarsApplicationMixin } = foundry.applications.api;
@@ -52,11 +51,6 @@ export default class BorderlandsWizard extends HandlebarsApplicationMixin(Applic
     static async _onRunPhase(event, target) {
         const phaseId = target.dataset.phase;
 
-        if (phaseId === "geography") {
-            new GeographyRoller(this.region, { onClose: () => this.render() }).render(true);
-            return;
-        }
-
         let phaseArgs = [];
         if (phaseId === "hazards") {
             const style = await promptLairStyle();
@@ -67,7 +61,7 @@ export default class BorderlandsWizard extends HandlebarsApplicationMixin(Applic
         try {
             const before = isPhaseDone(this.region, "princes") ? this.region.princes.entries.length : 0;
             await runPhase(this.region, phaseId, ...phaseArgs);
-            if (phaseId === "ruins" || phaseId === "relationships" || phaseId === "settlements" || phaseId === "hazards") {
+            if (phaseId === "geography" || phaseId === "ruins" || phaseId === "relationships" || phaseId === "settlements" || phaseId === "hazards") {
                 game.journal.get(this.region[phaseId].journalId)?.sheet.render(true);
             } else if (phaseId === "princes") {
                 const count = this.region.princes.entries.length - before;

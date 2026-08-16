@@ -1,8 +1,8 @@
 // Table 4-1's lair count is explicitly GM-chosen, not random ("it is something you need to
 // decide, in broad terms, rather than randomly generate") — this is the single-field prompt
-// for that choice, opened in place of the generic one-shot runPhase() flow the same way
-// GeographyRoller is, but as a lightweight DialogV2 rather than a whole ApplicationV2 (see
-// PLAN.md's "Hazards phase design" section).
+// the wizard awaits *before* calling the generic one-shot runPhase("hazards", style), as a
+// lightweight DialogV2 rather than a whole ApplicationV2 (see PLAN.md's "Hazards phase
+// design" section).
 
 /**
  * Prompts the GM for a campaign style (Few/Moderate/Many monster lairs — Table 4-1's three

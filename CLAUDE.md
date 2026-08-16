@@ -12,15 +12,16 @@ npm test         # vitest unit tests (Node, stubs in tests/setup.mjs)
 
 ## Status
 
-All six SPECS.md phases are implemented and committed. Geography through Settlements are
-manually verified in a live Foundry world; Hazards and the 3 settings (below) are
-implemented and committed but not yet confirmed working in-game — check before relying on
-them. See `docs/DECISIONS.md` for the "why" behind every non-obvious call below, and
-`PLAN.md` for the full narrative if `docs/DECISIONS.md` isn't enough detail.
+All six SPECS.md phases are implemented and committed. Ancient Ruins through Settlements are
+manually verified in a live Foundry world; Hazards, the 3 settings, and the redesigned
+region-aware Geography phase (below) are implemented and committed but not yet confirmed
+working in-game — check before relying on them. See `docs/DECISIONS.md` for the "why" behind
+every non-obvious call below, and `PLAN.md` for the full narrative if `docs/DECISIONS.md`
+isn't enough detail.
 
 | Phase | Tables | Trigger | Foundry output |
 |---|---|---|---|
-| 1. Geography | 1-1, 1-2 | Interactive `GeographyRoller` dialog (not `runPhase` — this is the one phase with a per-step GM decision) | Scene painted with one `Drawing` per grid cell, radiating fill from the map's frontier; rivers logged only |
+| 1. Geography | 1-1, 1-2 | Generic one-shot `runPhase` | Scene (Global Illumination on) painted with one `Drawing` per grid cell — terrain clustered by type (Swamps/Mountains on the border, Hills hugging Mountains), rivers/cliffs as freehand `Drawing` polygons, Special Features overwriting terrain per their own placement rule |
 | 2. Ancient Ruins | 1-3..1-8 | Generic one-shot `runPhase` | One page per ruin in `"<Map Name> - Ancient Ruins"`; a scene `Note` per ruin deep-links to its page |
 | 3. Princes | 1-3, 2-1..2-11 | Generic one-shot `runPhase` | `npc` Actors (linked Career/Skill/Talent Items, resolved against the required `wfrp4e-core` compendiums) in a shared `"<Map Name>"` Actor folder |
 | 4. Relationships | 2-12..2-22 | Generic one-shot `runPhase` | One page **per prince** in `"<Map Name> - Relationships"`; mutual natures (Alliance/Rivalry/War) on both pages, one-directional natures only on the feeling prince's page |

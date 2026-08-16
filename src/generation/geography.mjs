@@ -1,11 +1,22 @@
-// SPECS.md "GEOGRAPHY PROCESS" — Table 1-1 (Geography, PDF p.9) and Table 1-2 (Special Features, PDF p.10).
-// Loop: roll 1d100 + running bonus -> terrain/river or (>100) a Table 1-2 special feature
-// -> +10 running bonus, except a special feature resets it to 0.
+// SPECS.md "GEOGRAPHY PROCESS" — Table 1-1 (Geography, PDF p.9) and Table 1-2 (Special
+// Features, PDF p.10). Loop: roll 1d100 + running bonus -> terrain/river or (>100) a Table
+// 1-2 special feature -> +10 running bonus, except a special feature resets it to 0.
 //
-// These are pure roll functions only — placement onto the Scene and running-bonus/grid-full
-// bookkeeping are owned by apps/geography-roller.mjs (PLAN.md §2, §5).
+// Redesigned (docs/DECISIONS.md "Geography (redesign)") to run as a single batch: every
+// roll happens up front (rollGeographyBatch), then the whole set is placed onto a grid at
+// once (geography-terrain.mjs/geography-rivers.mjs/geography-features.mjs) so later
+// placement rules (Hills hugging Mountains, rivers seeking Swamps, ...) can see terrain that
+// hasn't been rolled yet in dice order. generateGeography is the one-shot orchestrator
+// (region.mjs's runPhase), same shape as every other phase now.
 
 import { GEOGRAPHY_TABLE, SPECIAL_FEATURES_TABLE } from "../tables/geography.mjs";
+import { placeTerrainRolls } from "./geography-terrain.mjs";
+import { placeRivers } from "./geography-rivers.mjs";
+import { placeIsolatedMountains, placeSpecialFeatures } from "./geography-features.mjs";
+import { createGeographyScene, paintGrid, paintRivers, paintCliffs } from "./geography-scene.mjs";
+import { createGeographyJournal } from "./geography-journal.mjs";
+import { postGeographySummary } from "./geography-chat.mjs";
+import { MODULE_ID, SETTINGS } from "../settings.mjs";
 
 /**
  * "Ban Large Geography Regions" setting: on a map under 500 squares, Table 1-1 results of
@@ -72,11 +83,62 @@ export async function rollSpecialFeature() {
 }
 
 /**
- * Geography is an interactive, Scene-painting loop (apps/geography-roller.mjs), not a
- * single roll-and-return phase like the others, so it can't be driven by the generic
- * runPhase() in region.mjs. Kept here only so region.mjs's phase registry has a `run` to
- * reference — open GeographyRoller from the wizard instead of calling this directly.
+ * Rolls the entire Table 1-1/1-2 sequence up front, before any placement happens. Stops
+ * once the cumulative `size` of terrain rolls alone meets or exceeds the map's capacity —
+ * Special Feature rolls are excluded from this budget entirely, since every one of them
+ * lands on top of already-placed terrain rather than needing its own dedicated space (a
+ * locked-in decision; see PLAN.md's Geography redesign). `maxRolls` is a hard safety cap,
+ * never realistically hit.
  */
-export async function generateGeography() {
-    throw new Error("Geography is driven by the Geography Roller dialog (open it from the wizard's Geography row), not runPhase.");
+export async function rollGeographyBatch({ width, height, banLargeRegions = false, maxRolls = 1000 } = {}) {
+    const mapSquares = width * height;
+    const log = [];
+    let runningBonus = 0;
+    let terrainSquares = 0;
+
+    for (let i = 0; i < maxRolls; i++) {
+        const result = await rollGeographyStep(runningBonus, { banLargeRegions, mapSquares });
+        log.push(result);
+        if (result.type === "terrain") terrainSquares += result.size;
+        runningBonus = result.type === "special" ? 0 : runningBonus + 10;
+        if (terrainSquares >= mapSquares) break;
+    }
+
+    return { log };
+}
+
+/**
+ * One-shot Geography orchestrator: rolls the full sequence, places it onto a grid (terrain
+ * blobs, then Isolated Mountain — ahead of rivers, so it's honored as high ground rivers
+ * can't flow uphill onto — then rivers, then every other special feature overwriting on top),
+ * paints the result onto a Scene (with Global Illumination on), and files the journal/chat
+ * summary. Re-running this on a region that already has a Geography scene reuses it
+ * (geography-scene.mjs clears its Drawings first) instead of creating a second one.
+ * @param {ReturnType<typeof import("./region.mjs").createRegion>} region
+ * @returns {Promise<{ geography: object }>}
+ */
+export async function generateGeography(region) {
+    const { width, height } = region.geography.mapSize;
+    const banLargeRegions = game.settings.get(MODULE_ID, SETTINGS.banLargeRegions);
+
+    const { log } = await rollGeographyBatch({ width, height, banLargeRegions });
+    const terrainRolls = log.filter(entry => entry.type === "terrain");
+    const riverRolls = log.filter(entry => entry.type === "river");
+    const specialRolls = log.filter(entry => entry.type === "special");
+
+    const { grid, regions } = await placeTerrainRolls(terrainRolls, { width, height });
+    await placeIsolatedMountains(specialRolls, grid);
+    const { rivers } = await placeRivers(riverRolls, grid, regions);
+    const remainingSpecialRolls = specialRolls.filter(roll => roll.feature !== "Isolated Mountain");
+    const { cliffs } = await placeSpecialFeatures(remainingSpecialRolls, grid, regions, rivers);
+
+    const scene = await createGeographyScene(region, { width, height });
+    await paintGrid(scene, grid);
+    await paintRivers(scene, rivers);
+    await paintCliffs(scene, cliffs);
+
+    const journal = await createGeographyJournal(region, log, { regions, rivers, cliffs });
+    await postGeographySummary(region, log, regions, rivers, cliffs);
+
+    return { geography: { ...region.geography, sceneId: scene.id, journalId: journal.id, log } };
 }

@@ -1506,6 +1506,243 @@ banned) and `tests/generation/settlements.test.mjs` (a settlement with
 without one). 157 vitest tests total, production build clean. **Not yet
 manually verified in a live Foundry world.**
 
+## Geography Phase Redesign
+
+### Status: implemented
+
+Requested after all six phases and the 3 settings were built and verified: the original
+Geography phase (interactive `GeographyRoller` dialog, one Table 1-1/1-2 roll placed
+immediately per click, radiating from the map's current frontier) produced a map whose
+layout was just an artifact of dice-roll order — no relationship between where a Mountain
+landed and where a nearby Hills patch ended up, rivers logged as text only, every Special
+Feature a single random cell with no relationship to the terrain around it. The user wanted
+a geographically coherent map instead: Swamps and Mountains anchored to the border,
+Hills hugging Mountains, rivers that actually path from high ground toward the nearest
+Swamp or the map edge, and each of the 10 Special Features placed per its own book
+preference/avoidance rule — full request preserved verbatim in the session transcript, and
+condensed into `docs/DECISIONS.md`'s "Geography (redesign)" section.
+
+This requires knowing the *entire* rolled set before placing any of it — you can't seed
+Hills next to Mountains that haven't been rolled yet — so the whole interactive
+one-roll-at-a-time UI was replaced by a single batch action. Three ambiguities were resolved
+via AskUserQuestion before implementation:
+
+1. **Roll UX**: a single one-shot click does everything (roll, place, paint, journal, chat)
+   in one go — the same shape every other phase's generic `runPhase` flow already uses.
+   `GeographyRoller`/`geography-roller.hbs` are deleted entirely; Geography joins the
+   wizard's generic auto-open-journal flow instead of special-casing itself.
+2. **A river's "different region" rule** for its 2nd+ start means a different *physical
+   placed blob*, not just a different terrain type.
+3. **Special Features "moving terrain out of the way"** is a **simple overwrite** — no
+   attempt to relocate displaced terrain — with the consequence that Special Feature rolls
+   are excluded from the "is the map full" budget entirely (they never need their own space).
+
+### Architecture
+
+`geography.mjs` gained `rollGeographyBatch` (loops `rollGeographyStep`, same running-bonus/
+Ban-Large-Regions mechanics as before, stopping once cumulative *terrain* `size` alone meets
+the map's capacity) and a real `generateGeography` orchestrator (previously a stub that just
+threw, pointing at the dialog). Three new pure placement modules do the actual work, each
+unit-tested the same way every other phase's pure roll logic is:
+
+- **`geography-grid.mjs`** (rewritten): generic grid/blob primitives — no per-terrain rules
+  live here. 8-directional adjacency throughout (a judgment call — a more organic look than
+  4-directional). `claimBlobFromSeed` replaces the old frontier-seeking `claimNextCells`,
+  taking an explicit seed instead of always finding the nearest-to-corner one.
+- **`geography-terrain.mjs`** (new): `placeTerrainRolls` seeds each terrain blob per its own
+  rule — Swamps radiate from the border (80% chance adjacent to the *immediately preceding*
+  Swamp for roll #2+), Mountains anchor to the border farthest from any Swamp (roll #1 only —
+  a deterministic maximization, not a Roll call), Hills hug Mountains, Badlands/Plains land
+  anywhere free. Fixed processing order (Swamps → Mountains → Hills → Badlands/Plains)
+  regardless of roll order.
+- **`geography-rivers.mjs`** (new): `walkFromCell`/`walkRiverPath` path a biased random walk
+  (distance-reducing directions weighted 3x) from a region seed toward the nearest Swamp, or
+  the border if the river started in one. `placeRivers`/`pickStartRegion` start each river in
+  a different placed region, preference order Mountains > Hills > Swamps > Badlands > Plains.
+- **`geography-features.mjs`** (new): `placeSpecialFeatures` dispatches all 10 Table 1-2
+  features to their own rule (full per-feature table in `docs/DECISIONS.md`). Mid-session,
+  after the first implementation pass, the user added one more rule — **no special feature
+  should land on a map-edge cell** — added via `interiorCells`/`candidatesFor`, scoped to
+  exclude Waterfall/Whirlpool and an existing-river Geyser (their position is anchored to a
+  river's path, and rivers can legitimately reach the border by the routing rules above).
+
+`geography-scene.mjs` gained Global Illumination on the created Scene (`environment.globalLight.enabled: true`)
+and reuse-on-regenerate (clears existing Drawings instead of creating a second Scene);
+`paintGrid`/`paintRivers`/`paintCliffs` replace the old per-roll `placeCellLabels` with
+batched single `createEmbeddedDocuments` calls. `geography-journal.mjs`/`geography-chat.mjs`
+were re-plumbed to take the final `log`/`regions`/`rivers`/`cliffs` as explicit parameters
+(matching every other phase's journal/chat convention) instead of reading off
+`region.geography.log` directly. `region.geography` dropped `stoppedReason` — the phase
+always runs to a deterministic, automatic completion now, so there's nothing left to record
+a reason for; the in-memory `grid`/`regions`/`rivers`/`cliffs` structures are never persisted
+on `region` at all — the Scene's Drawings are the source of truth afterward, same as every
+later phase already reads terrain-at-cell off the Scene rather than off `region`.
+
+### Tests
+
+`geography-grid.test.mjs` rewritten for the new primitives; new `geography-terrain.test.mjs`
+(11 tests, small hand-traced grids covering every seed rule including the 80%-adjacent-Swamp
+branch and Mountains' deterministic farthest-from-Swamp pick), `geography-rivers.test.mjs`
+(10 tests, region preference/exclusion/reuse-fallback, the biased-walk termination on a Swamp
+vs. the border), `geography-features.test.mjs` (18 tests, one rule per feature including both
+"generate a river first" fallbacks, Caves' entrance-count formula, and — added with the
+border-edge rule — dedicated tests proving Fertile Valley/Isolated Mountain/Cliff never pick
+a map-edge cell when an interior candidate exists). `geography.test.mjs` gained
+`rollGeographyBatch` coverage (stops on terrain-size capacity, rivers/specials excluded from
+the budget, `maxRolls` safety cap). `region.test.mjs`'s old "geography is driven by the
+Geography Roller dialog, not runPhase" test was removed (no longer true, and there's no
+Foundry-stub-free replacement to write — matches every other phase's `generate*` orchestrator,
+which also isn't unit-tested end-to-end).
+
+### Post-implementation fixes (from live testing)
+
+Once the redesign was in a Foundry world, the user reported two problems, both fixed in the
+same session:
+
+- **Special Features landing on the map edge.** Not part of the original request — the user
+  asked for this after seeing the first live map. Fixed by `interiorCells`/`candidatesFor` in
+  `geography-features.mjs`, scoped to exclude only the features whose position is
+  independently chosen (Waterfall/Whirlpool and an existing-river Geyser stay unrestricted,
+  since they're anchored to a river's path and rivers can legitimately reach the border).
+- **A Waterfall-triggered fallback river started in "Grassy Mountains" and immediately landed
+  at the map edge instead of actually crossing the map.** Root cause: `walkFromCell`'s
+  arrival check ran *before* taking any wandering step, and Mountains/Swamps are themselves
+  seeded at the border — so a river's source (or its mandatory step-1 landing cell) was
+  frequently already a border cell, making "have I arrived" trivially true on step zero.
+  Fixed by moving the check to *after* each step, guaranteeing at least one genuine wandering
+  move before the border/Swamp target can be declared reached.
+- **Cliff rendered as a single 1-cell line between two cell centers instead of running along
+  the whole boundary between the two blobs.** Fixed by tracing every axis-adjacent cell-pair
+  between the same two regions (not just the one pair that picked them), converting each to
+  its shared-edge corner points, deduplicating, and sorting into one polyline
+  (`sharedEdgeCorners` in `geography-features.mjs`).
+
+### Second round: vegetation opacity, elevation-aware rivers, edge-accurate Cliff (from live testing)
+
+More live-testing feedback, addressed in the same session:
+
+- **Vegetation now also encodes Drawing `fillAlpha`** (`VEGETATION_OPACITY`,
+  `tables/geography.mjs`: Forested 1, Grassy 0.8, Scrubland/no-qualifier 0.6, Barren/Desert
+  0.4 — the user's own exact values) — `FEATURE_COLORS` alone couldn't distinguish
+  "Forested Hills" from "Barren Hills," since color only tracks terrain category.
+- **Cliff pixel conversion bug**: `paintCliffs` was reusing `paintRivers`' cell-*center*
+  conversion even though `sharedEdgeCorners` already returns exact grid-line corner points —
+  every Cliff rendered half a cell off, reading as running through cell centers instead of
+  along the true boundary. Fixed by giving each painter its own `toPixel` mapper.
+- **Rivers now touch the map border visually** — a river ending at the border previously
+  stopped at that cell's *center*, short of the actual edge once drawn. Fixed with a
+  synthetic `borderExitPoint` (a fractional cell-coordinate) appended only when the arrival
+  was genuinely a border-reach, not a Swamp-reach; `geography-features.mjs`'s
+  `realPathCells` filters it back out before Waterfall/Whirlpool ever try to place a feature
+  "on" it (a fractional coordinate isn't a real placeable square).
+- **Rivers now avoid crossing themselves or other rivers**, and **never step uphill**
+  (Mountains > Hills > Plains/Badlands/Swamps, `ELEVATION_TIER`) — two new hard constraints
+  on every step (including the mandatory step-1 "leave the source region" move); a step with
+  no legal candidate left just ends the river there.
+- **A river's source no longer starts on a border cell** if the region has any interior
+  cell, and **prefers the cell closest to the map's center** among the eligible ones — a
+  deterministic pick (`pickSourceCell`), mirroring Mountains' farthest-from-Swamp precedent.
+  This also means a river's source no longer consumes a `Roll` at all.
+- **Caves' Scene label is now location-aware** — "Cave entrance in Grassy Hills" instead of
+  a bare "Caves," reading the terrain/vegetation the cell had before being overwritten
+  (`caveEntranceLabel`), stored as a `label` field distinct from `terrain` (which stays
+  `"Caves"` so `FEATURE_COLORS` lookups keep working).
+- **Drawing stroke widths**: Cliff 10px, River 8px, both up from a flat 4px; River also gets
+  `bezierFactor: 1` (full smoothing, since it's meant to wander organically) while Cliff
+  stays an unsmoothed straight polyline.
+
+211 vitest tests total, production build clean. **Not yet manually re-verified in a live
+Foundry world since this second round of fixes.**
+
+### Third round: river retry-until-arrived, Swamp-touch extension, connected-boundary Cliff (from live testing)
+
+More live-testing feedback, addressed in the same session:
+
+- **A river that dead-ends without reaching its target (border or Swamp) is now discarded and
+  retried from the same source**, up to `MAX_RIVER_WALK_ATTEMPTS = 20` times
+  (`walkFromCellUntilArrived`, `geography-rivers.mjs`) — a dead-ended, visually-truncated
+  river no longer reads as a real river. `walkFromCell` now returns `{ path, arrived }` so the
+  wrapper can tell a genuine arrival from a dead end; each attempt gets its own scratch copy
+  of the shared `usedCells` Set so a failed attempt doesn't permanently block later rivers.
+  Falls back to the last unfinished attempt if every retry fails, rather than nothing at all.
+- **A river reaching a Swamp now gets one extra path point touching the Swamp tile itself**,
+  mirroring the border case — the arrival check only required being *adjacent* to a Swamp
+  cell, so a diagonal arrival previously stopped visibly short of it. Appends the actual
+  nearest Swamp cell (`nearestOf`) — a real, integer-coordinate cell, not a fractional
+  pixel-space projection like `borderExitPoint`.
+- **Cliff generation was fundamentally broken, not just imprecise**: screenshot evidence
+  showed the Cliff line zigzagging across large swathes of unrelated terrain. Root cause: the
+  "trace the entire shared boundary" fix from the second round collected every corner point
+  where the two picked regions touched *anywhere on the map* and sorted them all into one
+  polyline along the boundary's dominant axis — which drew a straight line connecting
+  completely disconnected stretches of the same two regions whenever a third blob happened to
+  sit between them. Fixed by replacing the global sort with a **connected-edge walk**
+  (`walkBoundaryChain`, `geography-features.mjs`): starting from the randomly-seeded boundary
+  segment, extend outward one shared corner at a time in each direction, but only while
+  exactly one unvisited segment of the same region pair continues from the current corner. A
+  branch point or a dead end — including a third blob interrupting the border, per the user's
+  own example ("Mountains border with Grassy Hills, Grassy Hills, Barren Hills, Grassy
+  Hills... the line should stop upon reaching the breaching line") — stops the walk exactly
+  there instead of jumping elsewhere.
+
+212 vitest tests total, production build clean. **Not yet manually re-verified in a live
+Foundry world since this third round of fixes.**
+
+### Fourth round: map edge always ends a river, Swamp-edge touch point, guaranteed river (from live testing)
+
+More live-testing feedback, addressed in the same session:
+
+- **The map border now always ends a river, even one biased toward a Swamp target** — a
+  Swamp-seeking river that reaches the map edge first previously kept trying to reach a Swamp
+  regardless (since `hasArrived` only checked Swamp-adjacency when a Swamp was the preferred
+  target), which could exhaust all 20 retry attempts hunting for a Swamp the walk could never
+  legally reach. Now `hasArrived` checks `isBorderCell` unconditionally, with Swamp-adjacency
+  as a second, lower-priority path — a cell satisfying both gets the border's `borderExitPoint`
+  extension, not the Swamp one. The "regenerate from start on a forced self/river crossing"
+  behavior requested alongside this was already covered by the existing retry wrapper (a step
+  with no legal candidate — including one boxed in purely by crossing-avoidance — already
+  triggers a full discard-and-retry via `walkFromCellUntilArrived`); no separate change needed.
+- **The Swamp-touch extension point now lands on the Swamp tile's own edge (or corner, for a
+  diagonal approach), not its center** — `swampTouchPoint` pulls the target Swamp cell's
+  center back half a cell along whichever axis the river approached from, the same
+  fractional-coordinate convention `borderExitPoint` already used for a border arrival. This
+  also means it's automatically excluded from `realPathCells` (fractional, not integer
+  coordinates) the same way `borderExitPoint` is, rather than needing its own carve-out.
+- **`placeRivers` now guarantees at least one river even if Table 1-1 rolled zero River
+  results** — a map with no rivers at all reads as a generation gap, not a legitimate outcome.
+  One extra river is force-started the normal way if the roll-driven loop placed none and at
+  least one region exists to start it in.
+
+215 vitest tests total, production build clean. **Not yet manually re-verified in a live
+Foundry world since this fourth round of fixes.**
+
+### Fifth round: diagonal self-crossing, Isolated Mountain before rivers (from live testing)
+
+More live-testing feedback, addressed in the same session:
+
+- **Rivers could still cross themselves or another river diagonally**, even after the
+  cell-level `usedCells` crossing-avoidance fix: with a 2x2 block's corners labeled clockwise
+  1/2/3/4, a walk could path `1 -> 3` (the "\" diagonal), and later — this river or another —
+  `2 -> 4` (the "/" diagonal of the *same* block), which crosses dead through the middle
+  without either step ever landing on a cell the other used. Fixed with `diagonalKey`
+  (`geography-rivers.mjs`, exported) — a canonical key for the 2x2 block plus which of its two
+  diagonals a step follows — and a parallel `usedDiagonals` Set threaded everywhere
+  `usedCells` already was (`walkFromCell`, `walkFromCellUntilArrived`, `walkRiverPath`,
+  `placeRivers`, and `geography-features.mjs`'s river-fallback helpers via a new
+  `usedRiverDiagonals`). `stepCandidates` rejects any diagonal candidate whose step would use
+  the block's other, already-claimed diagonal.
+- **Isolated Mountain now places before rivers, and counts as Mountains-tier elevation** for
+  the river walk's uphill check — previously it was placed after rivers (with every other
+  Special Feature) and, once placed, read as flat ground to `elevationOf` (its terrain string
+  didn't match any `ELEVATION_TIER` key), so a river could path straight over what's
+  thematically a literal mountain. `generateGeography` now calls a new
+  `placeIsolatedMountains` (splitting Isolated Mountain rolls out of the Table 1-2 set) before
+  `placeRivers`, then `placeSpecialFeatures` on the remaining rolls afterward as before;
+  `ELEVATION_TIER["Isolated Mountain"]` is now `2`, same as Mountains.
+
+218 vitest tests total, production build clean. **Not yet manually re-verified in a live
+Foundry world since this fifth round of fixes.**
+
 ## Not in scope for this plan (future sessions)
 
 `Conversion_Rules.pdf` (2nd edition → 4th edition WFRP character conversion
