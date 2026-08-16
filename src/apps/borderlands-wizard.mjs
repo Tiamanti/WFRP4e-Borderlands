@@ -31,7 +31,11 @@ export default class BorderlandsWizard extends HandlebarsApplicationMixin(Applic
         }
     };
 
-    region = createRegion();
+    /** @param {{sceneName?: string, mapSize?: {width: number, height: number}}} [options] */
+    constructor({ sceneName, mapSize, ...appOptions } = {}) {
+        super(appOptions);
+        this.region = createRegion({ sceneName, mapSize });
+    }
 
     async _prepareContext(options) {
         const context = await super._prepareContext(options);

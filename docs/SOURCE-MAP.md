@@ -8,7 +8,7 @@
 
 | File | Exports | Purpose |
 |------|---------|---------|
-| `borderlands-command.mjs` | `handleBorderlandsCommand` | GM check, opens `BorderlandsWizard` |
+| `borderlands-command.mjs` | `handleBorderlandsCommand` | GM check, parses `/borderlands [sceneName] [mapSize=WxH]` args, opens `BorderlandsWizard` |
 
 ## src/apps/
 
@@ -28,7 +28,11 @@ locations when filling each in. Geography is implemented (PLAN.md).
 | `region.mjs` | `REGION_PHASES`, `createRegion`, `runPhase` | phase registry + region data shape |
 | `geography.mjs` | `rollGeographyStep`, `rollSpecialFeature`, `generateGeography` | GEOGRAPHY PROCESS rolls (Tables 1-1, 1-2). `generateGeography` just throws, pointing at `GeographyRoller` — geography is an interactive loop, not a one-shot `runPhase` call |
 | `geography-grid.mjs` | `createGrid`, `claimNextCells`, `isGridFull` | Pure grid-cell placement math (radiating fill from top-left), no Foundry dependency |
-| `geography-scene.mjs` | `createGeographyScene`, `placeCellLabels` | Foundry `Scene`/`Drawing` creation — isolated from the pure logic above so that stays unit-testable |
+| `geography-scene.mjs` | `createGeographyScene`, `placeCellLabels` | Foundry `Scene`/`Drawing` creation (zero scene padding, per-terrain `Drawing` fill color from `FEATURE_COLORS`) — isolated from the pure logic above so that stays unit-testable |
+| `geography-chat.mjs` | `postGeographySummary` | Posts the roll log to chat (same "Label — N squares (total)" / "River (total)" lines as the roller window) as a GM-only ("selfroll") message when the GM clicks End Phase |
+| `geography-journal.mjs` | `createGeographyJournal`, `collectFeatureDescriptions` | Creates "`<Map Name>` - Geography" (one page, one paragraph per unique terrain/special feature rolled, using its book description) when the GM clicks End Phase |
+| `journal-folder.mjs` | `getOrCreateJournalFolder` | Creates/reuses the shared "`<Map Name>`" JournalEntry folder every phase's journals get filed into (`region.journalFolderId`) |
+| `map-size.mjs` | `parseMapSize`, `DEFAULT_MAP_SIZE` | Parses the `/borderlands` command's `mapSize=WxH` arg, defaulting to 20x20 |
 | `ruins.mjs` | `generateAncientRuins` | ANCIENT RUINS PROCESS (Tables 1-3..1-8) |
 | `princes.mjs` | `generatePrinces` | PRINCE GENERATION SUMMARY (Tables 1-3, 2-1..2-11) |
 | `relationships.mjs` | `generateRelationships` | RELATIONS GENERATION SUMMARY (Tables 2-12..2-22) |
@@ -39,7 +43,7 @@ locations when filling each in. Geography is implemented (PLAN.md).
 
 | File | Exports | Purpose |
 |------|---------|---------|
-| `geography.mjs` | `GEOGRAPHY_TABLE`, `SPECIAL_FEATURES_TABLE`, `TERRAIN_DESCRIPTIONS`, `VEGETATION_DESCRIPTIONS` | Table 1-1 / 1-2 data, transcribed from the PDF (`pdftotext -table`) and cross-checked against the book's own row pattern |
+| `geography.mjs` | `GEOGRAPHY_TABLE`, `SPECIAL_FEATURES_TABLE`, `TERRAIN_DESCRIPTIONS`, `VEGETATION_DESCRIPTIONS`, `FEATURE_COLORS` | Table 1-1 / 1-2 data, transcribed from the PDF (`pdftotext -table`) and cross-checked against the book's own row pattern; `FEATURE_COLORS` maps each terrain/special-feature name to its Drawing fill color |
 
 ## templates/
 
@@ -52,7 +56,8 @@ locations when filling each in. Geography is implemented (PLAN.md).
 
 ```js
 {
-    geography: { sceneId: null, mapSize: { width: 20, height: 20 }, log: [], stoppedReason: null },
+    journalFolderId: null,
+    geography: { sceneId: null, sceneName: "Borderlands", mapSize: { width: 20, height: 20 }, journalId: null, log: [], stoppedReason: null },
     ruins: [],
     princes: [],
     relationships: [],
@@ -61,10 +66,16 @@ locations when filling each in. Geography is implemented (PLAN.md).
 }
 ```
 
+`createRegion({ sceneName, mapSize })` accepts overrides — this is how the `/borderlands`
+command's optional `sceneName`/`mapSize=WxH` args reach the generated Scene.
 `region.geography.log` accumulates one entry per roll (`{ roll, bonus, total, type, ...,
 cells }`, `cells` being the grid squares that roll claimed — `[]` for rivers, which are
 logged only and never painted onto the Scene). `region.geography.sceneId` points at the
-`Scene` document `GeographyRoller` creates on the first roll.
+`Scene` document `GeographyRoller` creates on the first roll. Each new roll's cells radiate
+outward from the current top-left *available* square (not the fixed corner), so every
+feature grows as its own blob from the map's frontier — see `geography-grid.mjs`.
+`region.journalFolderId` and `region.geography.journalId` are set when End Phase creates
+the shared "`<Map Name>`" folder and the "`<Map Name>` - Geography" JournalEntry inside it.
 
 For the other five phases: each `generate*` function receives the region built so far (so
 later phases can react to earlier results — e.g. relationships need `region.princes`) and

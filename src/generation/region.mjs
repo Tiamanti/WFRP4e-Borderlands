@@ -19,9 +19,12 @@ export const REGION_PHASES = [
 ];
 
 /** Empty region data shape — one array/object per phase's output. */
-export function createRegion() {
+export function createRegion({ sceneName = "Borderlands", mapSize = { width: 20, height: 20 } } = {}) {
     return {
-        geography: { sceneId: null, mapSize: { width: 20, height: 20 }, log: [], stoppedReason: null },
+        // Shared by every phase's Journal Entries (see generation/journal-folder.mjs) —
+        // one "<Map Name>" folder holds Geography's, Ruins', etc. journals together.
+        journalFolderId: null,
+        geography: { sceneId: null, sceneName, mapSize, journalId: null, log: [], stoppedReason: null },
         ruins: [],
         princes: [],
         relationships: [],

@@ -12,6 +12,20 @@ describe("geography-grid", () => {
         ]);
     });
 
+    it("radiates the next claim from the current frontier, not the fixed corner", () => {
+        // After (0,0),(0,1),(1,0) are claimed, the nearest unclaimed cell to (0,0) is
+        // (1,1) — the next batch should cluster around that frontier point, not resume
+        // scanning distance-from-(0,0) (which would instead reach for (0,2)/(2,0)).
+        const grid = createGrid(4, 4);
+        claimNextCells(grid, 3);
+        const second = claimNextCells(grid, 3);
+        expect(second).toEqual([
+            { x: 1, y: 1 },
+            { x: 1, y: 2 },
+            { x: 2, y: 1 },
+        ]);
+    });
+
     it("never returns an already-claimed cell across multiple calls", () => {
         const grid = createGrid(3, 3);
         const first = claimNextCells(grid, 4);

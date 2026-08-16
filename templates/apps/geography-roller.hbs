@@ -13,6 +13,9 @@
             {{else if (eq this.type "terrain")}}
                 {{#if this.vegetation}}{{this.vegetation}} {{/if}}{{this.terrain}}
                 — {{this.cells.length}} {{localize "BORDERLANDS.GeographySquares"}} ({{this.total}})
+            {{else if (eq this.placement "boundary")}}
+                {{localize "BORDERLANDS.GeographyLogSpecial"}}: {{this.feature}}
+                — {{this.size}} {{this.sizeUnit}} ({{this.total}})
             {{else}}
                 {{localize "BORDERLANDS.GeographyLogSpecial"}}: {{this.feature}}
                 — {{this.cells.length}} {{localize "BORDERLANDS.GeographySquares"}} ({{this.total}})

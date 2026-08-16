@@ -17,5 +17,6 @@
   "BORDERLANDS.GeographyStopped": "phase ended",
   "BORDERLANDS.GeographyLogRiver": "River",
   "BORDERLANDS.GeographyLogSpecial": "Special Feature",
-  "BORDERLANDS.GeographySquares": "squares"
+  "BORDERLANDS.GeographySquares": "squares",
+  "BORDERLANDS.InvalidMapSize": "Invalid map size \"{input}\" — expected e.g. 20x20. Using the default instead."
 }

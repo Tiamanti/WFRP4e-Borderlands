@@ -34,11 +34,22 @@ describe("geography rolls", () => {
         globalThis.__rollQueue = [1, 55]; // 1d10 = 1 -> Caves; size roll = 55
         const caves = await rollSpecialFeature();
         expect(caves.feature).toBe("Caves");
+        expect(caves.placement).toBe("area");
         expect(caves.size).toBe(55);
 
         globalThis.__rollQueue = [7]; // 1d10 = 7 -> Tor, no size to roll
         const tor = await rollSpecialFeature();
         expect(tor.feature).toBe("Tor");
+        expect(tor.placement).toBe("single");
         expect(tor.size).toBeNull();
+    });
+
+    it("marks Cliff as a boundary feature — its roll is a height, not a square count", async () => {
+        globalThis.__rollQueue = [2, 650]; // 1d10 = 2 -> Cliff; height roll = 650 (feet)
+        const cliff = await rollSpecialFeature();
+        expect(cliff.feature).toBe("Cliff");
+        expect(cliff.placement).toBe("boundary");
+        expect(cliff.size).toBe(650);
+        expect(cliff.sizeUnit).toBe("feet");
     });
 });

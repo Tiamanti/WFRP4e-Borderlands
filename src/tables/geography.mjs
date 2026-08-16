@@ -114,19 +114,29 @@ export const GEOGRAPHY_TABLE = [
     { type: "river" }, // 100
 ];
 
-/** 1d10 table for Table 1-1 totals over 100 (i.e. "101 or more"). 1-indexed, same as above. */
+/**
+ * 1d10 table for Table 1-1 totals over 100 (i.e. "101 or more"). 1-indexed, same as above.
+ * `placement` distinguishes the table's own "most special features occupy a single
+ * square... those that do not are specified" rule:
+ *   - "area": `sizeFormula` is a genuine square count (only Caves — "Caves, d% squares").
+ *   - "boundary": `sizeFormula` rolls something else entirely (only Cliff — the roll is
+ *     the escarpment's *height in feet*; the book describes it running along a terrain
+ *     boundary and extending across the map, not filling a blob of squares). Handled like
+ *     a River: logged only, never claims grid cells.
+ *   - "single": every other feature — no sizeFormula, claims exactly one cell.
+ */
 export const SPECIAL_FEATURES_TABLE = [
     null,
-    { feature: "Caves", sizeFormula: "1d100", description: "Entrance to an extensive system of underground chambers." }, // 1
-    { feature: "Cliff", sizeFormula: "(1d10 * 50) + 200", sizeUnit: "feet", description: "A steep escarpment at least 200ft high; runs along terrain boundaries, rarely through mountains." }, // 2
-    { feature: "Fertile Valley", sizeFormula: null, description: "Unusually fertile ground; settlements should be placed here before anywhere else." }, // 3
-    { feature: "Geyser", sizeFormula: null, description: "Always forms the source of a river." }, // 4
-    { feature: "Isolated Mountain", sizeFormula: null, description: "A single mountain standing apart from the rest of the terrain, possibly an extinct volcano." }, // 5
-    { feature: "Pool", sizeFormula: null, description: "A still body of water with no visible source or outlet." }, // 6
-    { feature: "Tor", sizeFormula: null, description: "A defensible hill with a flat peak; almost always inhabited." }, // 7
-    { feature: "Volcano", sizeFormula: null, description: "Active; the soil in adjacent squares is unusually fertile (a Fertile Valley may be placed next to it)." }, // 8
-    { feature: "Waterfall", sizeFormula: null, description: "Must be sited on a river at a sudden change of elevation (add a river/cliff first if needed)." }, // 9
-    { feature: "Whirlpool", sizeFormula: null, description: "Impassable water; the region needs a river or coastline first (add one if it has none)." }, // 10
+    { feature: "Caves", placement: "area", sizeFormula: "1d100", description: "Entrance to an extensive system of underground chambers." }, // 1
+    { feature: "Cliff", placement: "boundary", sizeFormula: "(1d10 * 50) + 200", sizeUnit: "feet", description: "A steep escarpment at least 200ft high; runs along terrain boundaries, rarely through mountains." }, // 2
+    { feature: "Fertile Valley", placement: "single", sizeFormula: null, description: "Unusually fertile ground; settlements should be placed here before anywhere else." }, // 3
+    { feature: "Geyser", placement: "single", sizeFormula: null, description: "Always forms the source of a river." }, // 4
+    { feature: "Isolated Mountain", placement: "single", sizeFormula: null, description: "A single mountain standing apart from the rest of the terrain, possibly an extinct volcano." }, // 5
+    { feature: "Pool", placement: "single", sizeFormula: null, description: "A still body of water with no visible source or outlet." }, // 6
+    { feature: "Tor", placement: "single", sizeFormula: null, description: "A defensible hill with a flat peak; almost always inhabited." }, // 7
+    { feature: "Volcano", placement: "single", sizeFormula: null, description: "Active; the soil in adjacent squares is unusually fertile (a Fertile Valley may be placed next to it)." }, // 8
+    { feature: "Waterfall", placement: "single", sizeFormula: null, description: "Must be sited on a river at a sudden change of elevation (add a river/cliff first if needed)." }, // 9
+    { feature: "Whirlpool", placement: "single", sizeFormula: null, description: "Impassable water; the region needs a river or coastline first (add one if it has none)." }, // 10
 ];
 
 /** Short GM-facing reference text — shown once as guidance, not repeated per roll. */
@@ -137,6 +147,29 @@ export const TERRAIN_DESCRIPTIONS = {
     Swamps: "Low-lying and waterlogged; solid ground is hard to tell from deep water, and the air is unhealthy.",
     Badlands: "Broken, rocky, and prone to earthquakes and flash floods; almost nothing arable grows here.",
     River: "No fixed size — routed by the GM across other terrain, generally from mountains toward plains; often disappears into swamps.",
+};
+
+/**
+ * Fill color per placed feature (terrain name, or special feature name — both are passed
+ * through the same `terrain` label to placeCellLabels). Falls back to a neutral grey for
+ * anything unmapped.
+ */
+export const FEATURE_COLORS = {
+    Plains: "#c9d97a",
+    Hills: "#8fbf5f",
+    Mountains: "#9e9e9e",
+    Swamps: "#4f6650",
+    Badlands: "#b06b3a",
+    Caves: "#5c5c5c",
+    Cliff: "#795548",
+    "Fertile Valley": "#66bb6a",
+    Geyser: "#4fc3f7",
+    "Isolated Mountain": "#78909c",
+    Pool: "#0288d1",
+    Tor: "#8d6e63",
+    Volcano: "#d84315",
+    Waterfall: "#00bcd4",
+    Whirlpool: "#01579b",
 };
 
 export const VEGETATION_DESCRIPTIONS = {

@@ -33,13 +33,18 @@ export async function rollGeographyStep(runningBonus = 0) {
     };
 }
 
-/** Rolls Table 1-2: Special Features (1d10). Only Caves and Cliff have a size to roll. */
+/**
+ * Rolls Table 1-2: Special Features (1d10). Only Caves and Cliff have a size to roll —
+ * but Cliff's roll is the escarpment's *height*, not a square count (see `placement` on
+ * SPECIAL_FEATURES_TABLE): callers must check `placement` before treating `size` as a
+ * number of grid cells to claim.
+ */
 export async function rollSpecialFeature() {
     const roll = await new Roll("1d10").evaluate();
     const entry = SPECIAL_FEATURES_TABLE[roll.total];
     const size = entry.sizeFormula ? (await new Roll(entry.sizeFormula).evaluate()).total : null;
     return {
-        type: "special", feature: entry.feature, size,
+        type: "special", feature: entry.feature, placement: entry.placement, size,
         sizeUnit: entry.sizeUnit ?? "squares", description: entry.description,
     };
 }

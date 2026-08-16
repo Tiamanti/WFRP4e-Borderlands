@@ -1,6 +1,8 @@
 import { rollGeographyStep } from "../generation/geography.mjs";
 import { createGrid, claimNextCells, isGridFull } from "../generation/geography-grid.mjs";
 import { createGeographyScene, placeCellLabels } from "../generation/geography-scene.mjs";
+import { postGeographySummary } from "../generation/geography-chat.mjs";
+import { createGeographyJournal } from "../generation/geography-journal.mjs";
 
 const { ApplicationV2, HandlebarsApplicationMixin } = foundry.applications.api;
 
@@ -73,11 +75,14 @@ export default class GeographyRoller extends HandlebarsApplicationMixin(Applicat
 
         const result = await rollGeographyStep(this.runningBonus);
 
-        if (result.type === "river") {
+        if (result.type === "river" || result.placement === "boundary") {
+            // Rivers, and boundary-line special features (Cliff — its roll is the
+            // escarpment's height, not a square count), have no extent reducible to a
+            // grid-cell claim. Logged only; the GM draws them onto the scene by hand.
             this.region.geography.log.push({ ...result, cells: [] });
-            this.runningBonus += 10;
         } else {
-            // terrain (Table 1-1) or special (Table 1-2) — both claim grid cells and paint them.
+            // terrain (Table 1-1) or an area/single special feature (Table 1-2) — claims
+            // grid cells and paints them.
             const size = result.size ?? 1;
             const cells = claimNextCells(this.grid, size);
             if (cells.length > 0) {
@@ -88,8 +93,8 @@ export default class GeographyRoller extends HandlebarsApplicationMixin(Applicat
                 });
             }
             this.region.geography.log.push({ ...result, cells });
-            this.runningBonus = result.type === "special" ? 0 : this.runningBonus + 10;
         }
+        this.runningBonus = result.type === "special" ? 0 : this.runningBonus + 10;
 
         if (isGridFull(this.grid)) this.region.geography.stoppedReason = "map-full";
         this.render();
@@ -97,6 +102,8 @@ export default class GeographyRoller extends HandlebarsApplicationMixin(Applicat
 
     static async _onEndPhase(event, target) {
         this.region.geography.stoppedReason ??= "ended-early";
+        await createGeographyJournal(this.region);
+        await postGeographySummary(this.region);
         this.close();
     }
 }

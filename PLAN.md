@@ -299,14 +299,259 @@ formula via a `vi.fn()` queue, same stubbing style already used for
   a special feature, river rolls log but paint nothing, and rolling stops
   automatically once the grid is full.
 
+## Ancient Ruins phase design
+
+Tables transcribed from PDF pages 12–19 (Table 1-3: Ancient Ruins, 1-4: Ruin
+Type, 1-5: Ancient Menaces, 1-6: Age of Ruins, 1-7: Original Purpose of
+Ruins, 1-8: Reason for Ruins), cross-checked with `pdftotext -table`: every
+column of the 1-5 and 1-7 matrices sums to exactly 100, which is strong
+confirmation the transcription is correct.
+
+### Key differences from Geography
+
+- **No interactive roller needed.** Unlike Geography, this process has no
+  "map is full, stop" condition requiring a per-step GM decision — it's roll
+  a count, then loop simple table lookups that many times. So this phase
+  runs through the **generic one-shot `runPhase()` flow already in
+  `region.mjs`**, the same as the still-stubbed phases, instead of getting
+  its own `ApplicationV2` dialog like `GeographyRoller`.
+- **Ruins land on already-painted terrain.** Geography's radiating fill
+  claims every grid cell by the time it stops, so there's no "empty cell" to
+  place a ruin into — the book's own guidance for the Location step (PDF
+  p.18/book p.18) says free-choice ruins should just be "scatter[ed] across
+  the map," so each ruin gets a **uniformly random cell** within
+  `region.geography.mapSize`, deduplicated against cells already used by
+  other ruins in this run.
+- **Journal Entry + Note, not Drawing.** Per your standing direction (and
+  confirmed for this phase): one `JournalEntry` ("Borderlands — Ancient
+  Ruins") with one `JournalEntryPage` per ruin, and a `Note` placeable
+  pinned at the ruin's cell that deep-links to that page (`entryId` +
+  `pageId`) — clicking the pin opens the ruin's writeup directly. Reusing
+  the existing `JournalEntry` on repeat runs (appending new pages) mirrors
+  how `GeographyRoller` reuses `sceneId`.
+- **Table 1-6 (Age of Ruins) isn't a real random table** — the book says so
+  explicitly ("you should choose the precise age of your ruins... Instead,
+  it gives broad bands... normally found dating from those periods"). Per
+  your answer, the module still auto-rolls a suggested age (uniformly picks
+  one of the ruin type's valid periods, then rolls a specific year within
+  it), but every ruin's journal page states this is a **suggestion** and
+  stays a normal editable page the GM can freely overwrite — no bespoke "Age
+  field" UI, just page text.
+- **Table 1-7 has no column for Oddity ruins.** Per your answer, Oddity
+  rolls twice on two independently-chosen random columns (of the other
+  five) and records both purposes — mechanizing the book's own suggestion
+  for "ambiguous... mysterious origin" ruins, applied specifically to the
+  one type that structurally can't roll a single column.
+
+### 1. Table data — `src/tables/ruins.mjs`
+
+Band tables (roll ranges, not 1-100 dense arrays like Geography's) sharing
+one small lookup helper:
+
+```js
+/** First entry whose `max` is >= roll, scanning in ascending order. */
+export function lookupBand(table, roll) {
+    return table.find(entry => roll <= entry.max);
+}
+
+export const RUIN_COUNT_TABLE = [ // Table 1-3
+    { max: 10, count: 1 }, { max: 22, count: 2 }, { max: 34, count: 3 },
+    { max: 47, count: 4 }, { max: 60, count: 5 }, { max: 72, count: 6 },
+    { max: 83, count: 7 }, { max: 92, count: 8 }, { max: 98, count: 9 },
+    { max: 100, count: 10 },
+];
+
+export const RUIN_TYPE_TABLE = [ // Table 1-4 — canonical type names used everywhere below
+    { max: 20, type: "Arabyan" }, { max: 30, type: "Chaos Cults" },
+    { max: 45, type: "Dwarf" }, { max: 65, type: "Khemri" },
+    { max: 90, type: "Recent Human" }, { max: 100, type: "Oddity" },
+];
+
+// Table 1-5, keyed by RUIN_TYPE_TABLE's `type`. Column headers in the book are
+// shorthand ("Chaos", "Human", "Oddities") — normalized to the same keys as above.
+export const ANCIENT_MENACES_TABLE = {
+    "Arabyan": [{ max: 25, menace: "Daemon" }, { max: 55, menace: "Degenerate Tribe" }, { max: 75, menace: "Plague" }, { max: 85, menace: "Swarm" }, { max: 95, menace: "Undead" }, { max: 100, menace: "None" }],
+    "Chaos Cults": [{ max: 20, menace: "Daemon" }, { max: 25, menace: "Degenerate Tribe" }, { max: 35, menace: "Golem" }, { max: 50, menace: "Plague" }, { max: 65, menace: "Swarm" }, { max: 85, menace: "Undead" }, { max: 95, menace: "Weapon" }, { max: 100, menace: "None" }],
+    "Dwarf": [{ max: 5, menace: "Daemon" }, { max: 30, menace: "Golem" }, { max: 55, menace: "Plague" }, { max: 75, menace: "Swarm" }, { max: 95, menace: "Weapon" }, { max: 100, menace: "None" }],
+    "Khemri": [{ max: 15, menace: "Daemon" }, { max: 40, menace: "Degenerate Tribe" }, { max: 50, menace: "Plague" }, { max: 60, menace: "Swarm" }, { max: 85, menace: "Undead" }, { max: 95, menace: "Weapon" }, { max: 100, menace: "None" }],
+    "Recent Human": [{ max: 15, menace: "Daemon" }, { max: 40, menace: "Degenerate Tribe" }, { max: 60, menace: "Plague" }, { max: 70, menace: "Swarm" }, { max: 85, menace: "Undead" }, { max: 95, menace: "Weapon" }, { max: 100, menace: "None" }],
+    "Oddity": [{ max: 15, menace: "Daemon" }, { max: 30, menace: "Degenerate Tribe" }, { max: 45, menace: "Golem" }, { max: 60, menace: "Plague" }, { max: 75, menace: "Swarm" }, { max: 80, menace: "Undead" }, { max: 95, menace: "Weapon" }, { max: 100, menace: "None" }],
+};
+
+// Table 1-7 — no "Oddity" column (see below).
+export const ORIGINAL_PURPOSE_TABLE = {
+    "Arabyan": [{ max: 30, purpose: "Fortress" }, { max: 60, purpose: "Outpost" }, { max: 70, purpose: "Settlement" }, { max: 90, purpose: "Temple" }, { max: 100, purpose: "Tomb" }],
+    "Chaos Cults": [{ max: 20, purpose: "Fortress" }, { max: 25, purpose: "Outpost" }, { max: 30, purpose: "Settlement" }, { max: 80, purpose: "Temple" }, { max: 100, purpose: "Tomb" }],
+    "Dwarf": [{ max: 25, purpose: "Fortress" }, { max: 60, purpose: "Outpost" }, { max: 80, purpose: "Settlement" }, { max: 90, purpose: "Temple" }, { max: 100, purpose: "Tomb" }],
+    "Khemri": [{ max: 20, purpose: "Fortress" }, { max: 50, purpose: "Outpost" }, { max: 60, purpose: "Settlement" }, { max: 70, purpose: "Temple" }, { max: 100, purpose: "Tomb" }],
+    "Recent Human": [{ max: 20, purpose: "Fortress" }, { max: 50, purpose: "Outpost" }, { max: 75, purpose: "Settlement" }, { max: 90, purpose: "Temple" }, { max: 100, purpose: "Tomb" }],
+};
+
+export const REASON_FOR_RUINS_TABLE = [ // Table 1-8, 1d10
+    null,
+    { reason: "Civil War" }, { reason: "Enigma" }, { reason: "Famine" }, { reason: "Magic" },
+    { reason: "Military Attack" }, { reason: "Natural Decay" }, { reason: "Natural Disaster" },
+    { reason: "Plague" }, { reason: "Policy" }, { reason: "Resource Loss" },
+];
+
+export const AGE_OF_RUINS_TABLE = [ // Table 1-6 — reference bands, not a d100 roll (see above)
+    { period: "Dawn of Time", yearsAgoMin: 3000, yearsAgoMax: 5000, validTypes: ["Dwarf", "Oddity"] },
+    { period: "Ancient Wars", yearsAgoMin: 1500, yearsAgoMax: 3000, validTypes: ["Chaos Cults", "Dwarf", "Khemri", "Oddity"] },
+    { period: "Historical", yearsAgoMin: 300, yearsAgoMax: 1500, validTypes: ["Arabyan", "Chaos Cults", "Dwarf", "Khemri", "Oddity"] },
+    { period: "Old", yearsAgoMin: 100, yearsAgoMax: 300, validTypes: ["Arabyan", "Chaos Cults", "Dwarf", "Recent Human", "Oddity"] },
+    { period: "Recent", yearsAgoMin: 0, yearsAgoMax: 100, validTypes: ["Chaos Cults", "Recent Human", "Oddity"] },
+];
+```
+
+Plus four short GM-facing description dicts, paraphrased (not quoted) the
+same way as Geography's `TERRAIN_DESCRIPTIONS`: `RUIN_TYPE_DESCRIPTIONS`,
+`MENACE_DESCRIPTIONS`, `PURPOSE_DESCRIPTIONS`, `REASON_DESCRIPTIONS` — one
+sentence per entry, embedded into each ruin's journal page.
+
+### 2. Roll logic — `src/generation/ruins.mjs`
+
+One pure batch function, replacing the current stub. All dice go through
+`Roll` (mockable via the existing `globalThis.__rollQueue` test stub):
+
+```js
+export async function rollAncientRuins(region) {
+    const countRoll = await new Roll("1d100").evaluate();
+    const count = lookupBand(RUIN_COUNT_TABLE, countRoll.total).count;
+
+    const ruins = [];
+    const usedCells = new Set();
+    for (let i = 0; i < count; i++) {
+        const type = lookupBand(RUIN_TYPE_TABLE, (await new Roll("1d100").evaluate()).total).type;
+        const menace = lookupBand(ANCIENT_MENACES_TABLE[type], (await new Roll("1d100").evaluate()).total).menace;
+        const purpose = await rollOriginalPurpose(type); // string[] — 2 entries only for Oddity
+        const reason = REASON_FOR_RUINS_TABLE[(await new Roll("1d10").evaluate()).total].reason;
+        const age = await rollSuggestedAge(type);
+        const cell = await pickRandomCell(region.geography.mapSize, usedCells);
+        usedCells.add(`${cell.x},${cell.y}`);
+        ruins.push({ type, menace, purpose, reason, age, cell });
+    }
+    return ruins;
+}
+```
+
+`rollOriginalPurpose(type)`: if `ORIGINAL_PURPOSE_TABLE[type]` exists, roll
+once. For `"Oddity"` (no column), roll a `1d5` twice to pick two columns
+from `Object.keys(ORIGINAL_PURPOSE_TABLE)`, roll `1d100` on each, and return
+both — `purpose` is always an array (`length === 1` normally, `=== 2` only
+for Oddity), so the journal page template doesn't need type-specific
+branching.
+
+`rollSuggestedAge(type)`: filter `AGE_OF_RUINS_TABLE` to bands whose
+`validTypes` includes `type`, pick one uniformly (`1d<n>`), then roll a year
+within `[yearsAgoMin, yearsAgoMax]` via formula
+`` `${yearsAgoMin} + 1d${yearsAgoMax - yearsAgoMin + 1} - 1` `` (keeps the
+uniform pick expressible as a single `Roll`, consistent with how the rest of
+the module avoids bare `Math.random`).
+
+`pickRandomCell(mapSize, usedCells)`: rolls `1d<width>`/`1d<height>` (0
+indexed by subtracting 1), re-rolling on a collision with `usedCells`. Given
+a 20×20 grid and a realistic ruin count (1–10), collisions are rare; if the
+grid is exhausted (only relevant for pathological tiny `mapSize` values in
+tests), it falls back to the first unused cell found by linear scan rather
+than looping forever.
+
+### 3. Materializing onto Foundry — `src/generation/ruins-scene.mjs`
+
+Mirrors Geography's split between pure logic and Foundry effects:
+
+```js
+/** Creates (or reuses) the ruins JournalEntry and adds one page per ruin. */
+export async function createRuinsJournal(region, ruins) {
+    let journal = region.ruins.journalId ? game.journal.get(region.ruins.journalId) : null;
+    if (!journal) {
+        journal = await JournalEntry.create({ name: "Borderlands — Ancient Ruins" });
+        region.ruins.journalId = journal.id;
+    }
+    const pages = await journal.createEmbeddedDocuments("JournalEntryPage", ruins.map((ruin, i) => ({
+        name: `Ruin ${region.ruins.entries.length + i + 1}: ${ruin.type}`,
+        text: { content: renderRuinPageHtml(ruin), format: CONST.JOURNAL_ENTRY_PAGE_FORMATS.HTML },
+    })));
+    return { journal, pages };
+}
+
+/** One Note per ruin, deep-linked to its journal page. */
+export async function placeRuinNotes(scene, ruins, pages) {
+    const notes = ruins.map((ruin, i) => ({
+        entryId: pages[i].parent.id, pageId: pages[i].id,
+        x: ruin.cell.x * scene.grid.size + scene.grid.size / 2,
+        y: ruin.cell.y * scene.grid.size + scene.grid.size / 2,
+        text: ruin.type,
+    }));
+    return scene.createEmbeddedDocuments("Note", notes);
+}
+```
+
+`renderRuinPageHtml(ruin)` is a small template-literal HTML builder (type,
+menace, purpose, reason, suggested age + "edit this if you want to place it
+more precisely" note, each with its one-sentence description looked up from
+the phase-1 description dicts) — plain string building, no Handlebars
+needed since it's static content written once at creation time, not
+re-rendered.
+
+### 4. Wiring into the wizard and region data shape
+
+- `region.mjs`: `ruins: []` becomes `ruins: { journalId: null, entries: [] }`
+  (mirrors Geography's richer shape, needed to remember the journal to
+  append to on a repeat run). `generateAncientRuins(region)` replaces the
+  stub, calling `rollAncientRuins` → `createRuinsJournal` →
+  `placeRuinNotes`, throwing early if `!region.geography.sceneId` ("run
+  Geography first"), and returning `{ ruins: { journalId, entries: [...region.ruins.entries, ...newRuins] } }`
+  for `runPhase` to merge in.
+- **`isPhaseDone(region, phaseId)` extracted into `region.mjs`**, replacing
+  the inline done-check that's been growing a special case per phase inside
+  `borderlands-wizard.mjs`. `geography` checks `log.length`, `ruins` checks
+  `entries.length`, everything else falls back to the existing
+  array/object-keys check. `_prepareContext` calls this helper instead of
+  inlining the logic.
+- `borderlands-wizard.mjs`: after a successful generic `runPhase(region,
+  "ruins")`, opens the created `JournalEntry`'s sheet
+  (`game.journal.get(region.ruins.journalId).sheet.render(true)`) so the GM
+  immediately sees the results — the one bit of `ruins`-specific handling
+  needed in the wizard, everything else goes through the unmodified generic
+  path.
+
+### 5. Tests — `tests/generation/ruins.test.mjs` and `tests/tables/ruins.test.mjs`
+
+Pure, `__rollQueue`-stubbed, no Scene/JournalEntry stubbing needed for the
+roll logic itself:
+- `lookupBand` returns the right band at both the low and high end of a
+  range, and at a band boundary.
+- `rollAncientRuins` produces the right `count` of ruins for a given Table
+  1-3 roll, and each ruin's `type`/`menace`/`reason` match the queued rolls.
+- Oddity ruins get a 2-entry `purpose` array; every other type gets a
+  1-entry array.
+- `pickRandomCell` never returns a cell already in `usedCells`.
+- Column-sum sanity check (`ANCIENT_MENACES_TABLE` and
+  `ORIGINAL_PURPOSE_TABLE` — assert each column's last band `max === 100`)
+  as a regression guard on the transcription itself.
+
+`createRuinsJournal`/`placeRuinNotes` are Foundry-side effects and, per the
+Geography precedent, are covered by manual verification rather than unit
+tests requiring a fuller Foundry stub.
+
+## Verification (Ancient Ruins)
+
+- `npm test` — the above, headless.
+- Manual: run Geography to completion first, then click **Roll** on the
+  Ancient Ruins row — confirm the count feels right for a couple of re-rolls,
+  a "Borderlands — Ancient Ruins" JournalEntry opens automatically with one
+  page per ruin (type/menace/purpose/reason/suggested age, each with its
+  description), and each page's Note pin is on the scene at the stated cell
+  and opens the right page when clicked. Re-running the phase should add
+  more pages/pins to the same JournalEntry rather than creating a second one.
+
 ## Not in scope for this plan (future sessions)
 
-Ancient Ruins, Princes, Relationships, Settlements, and Hazards phases — each
-needs its own table transcription + process design pass like this one, done
-when we get to it. Per the user's direction so far, their eventual Foundry
-representations are: Ancient Ruins → Journal entries + scene placeables;
-Princes → NPC Actors; Relationships → Journal entries; Settlements → Journal
-entries + placeables (same pattern as Ruins); Hazards is still open.
+Princes, Relationships, Settlements, and Hazards phases — each needs its own
+table transcription + process design pass like this one, done when we get to
+it. Per the user's direction so far, their eventual Foundry representations
+are: Princes → NPC Actors; Relationships → Journal entries; Settlements →
+Journal entries + placeables (same pattern as Ruins); Hazards is still open.
 
 A second source PDF has been added: `Conversion_Rules.pdf` (2nd edition →
 4th edition WFRP character conversion rules) — relevant to the **Princes**
