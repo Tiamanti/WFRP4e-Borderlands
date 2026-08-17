@@ -2,8 +2,8 @@ import { describe, it, expect, beforeEach } from "vitest";
 import { createPlacementGrid } from "../../src/generation/geography-grid.mjs";
 import { walkFromCell, walkRiverPath, pickStartRegion, placeRivers, diagonalKey } from "../../src/generation/geography-rivers.mjs";
 
-function fillGrid(width, height, regions) {
-    const grid = createPlacementGrid(width, height);
+function fillGrid(width, height, regions, type = "square") {
+    const grid = createPlacementGrid(width, height, type);
     for (const region of regions) {
         for (const cell of region.cells) {
             grid.cells.set(`${cell.x},${cell.y}`, {
@@ -159,7 +159,7 @@ describe("geography-rivers", () => {
             expect(path[1]).toEqual({ x: 0, y: 0 });
         });
 
-        it("never takes a diagonal step that crosses another diagonal through the same 2x2 block, even though it shares no cell with it", async () => {
+        it("never takes a diagonal step that crosses another diagonal through the same 2x2 block, even though it shares no cell with it (square grid only — see the hex counterpart below)", async () => {
             // A 2x2 block, corners labeled clockwise from top-left: 1=(0,0) 2=(1,0) 3=(1,1)
             // 4=(0,1). An earlier river already walked 1 -> 3 (the "\" diagonal). Starting a
             // fresh walk at corner 2 with 1 and 3 already claimed, the only cell left to step
@@ -176,6 +176,17 @@ describe("geography-rivers", () => {
             const { path, arrived } = await walkFromCell(grid, { x: 1, y: 0 }, { usedCells, usedDiagonals });
             expect(path).toEqual([{ x: 1, y: 0 }]); // no legal step at all — not even the border-touch cell (0,1)
             expect(arrived).toBe(false);
+        });
+
+        it("on a hex grid, usedDiagonals is never populated or consulted — the crossing concept doesn't apply", async () => {
+            const grid = createPlacementGrid(5, 5, "hex");
+            for (let y = 0; y < 5; y++) {
+                for (let x = 0; x < 5; x++) grid.cells.set(`${x},${y}`, { kind: "terrain", terrain: "Plains", regionId: 1 });
+            }
+            const usedDiagonals = new Set();
+            globalThis.__rollQueue = Array(10).fill(1);
+            await walkFromCell(grid, { x: 2, y: 2 }, { usedDiagonals });
+            expect(usedDiagonals.size).toBe(0);
         });
     });
 

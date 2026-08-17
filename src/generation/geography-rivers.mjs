@@ -4,7 +4,7 @@
 // a line drawn over the terrain, painted separately by geography-scene.mjs's paintRivers.
 
 import {
-    isBorderCell, neighborsOf, cellsOfType, nearestDistance, distanceToBorder, pickRandomCell,
+    isBorderCell, neighborsOf, cellsOfType, nearestDistance, distanceToBorder, pickRandomCell, cellDistance,
 } from "./geography-grid.mjs";
 import { ELEVATION_TIER } from "../tables/geography.mjs";
 
@@ -17,17 +17,23 @@ function cellKey(x, y) {
     return `${x},${y}`;
 }
 
-/** Whether `cell` is on, or diagonally/orthogonally touching, one of `swampCells`. */
-function isAtOrAdjacentToSwamp(cell, swampCells) {
-    return nearestDistance(cell, swampCells) <= Math.SQRT2 + 1e-9;
+/**
+ * Whether `cell` is on, or adjacent to, one of `swampCells` — "adjacent" per the grid's own
+ * distance metric: a square grid's diagonal neighbor is `Math.SQRT2` away, a hex grid's every
+ * neighbor is exactly 1 tile-step away (`cellDistance`'s hex branch), so the threshold itself
+ * has to be grid-aware too, not just the distance calculation underneath it.
+ */
+function isAtOrAdjacentToSwamp(grid, cell, swampCells) {
+    const threshold = grid.type === "hex" ? 1 + 1e-9 : Math.SQRT2 + 1e-9;
+    return nearestDistance(grid, cell, swampCells) <= threshold;
 }
 
 /** The single closest of `targets` to `cell` (ties go to the first in scan order). */
-function nearestOf(cell, targets) {
+function nearestOf(grid, cell, targets) {
     let best = targets[0];
-    let bestDist = Math.hypot(cell.x - best.x, cell.y - best.y);
+    let bestDist = cellDistance(grid, cell, best);
     for (const t of targets.slice(1)) {
-        const d = Math.hypot(cell.x - t.x, cell.y - t.y);
+        const d = cellDistance(grid, cell, t);
         if (d < bestDist) { bestDist = d; best = t; }
     }
     return best;
@@ -73,7 +79,7 @@ function oppositeDiagonalKey(a, b) {
     return `${minX},${minY},${dir}`;
 }
 
-/** Legal next-step candidates from `current`: 8-directional neighbors, minus any already used by a river (this one or an earlier one), minus any that would climb to a higher elevation tier (Plains/Badlands/Swamps < Hills < Mountains — rivers never flow uphill), minus any diagonal step that would visually cross an already-used diagonal through the same 2x2 block (see `diagonalKey`), optionally minus a specific region id (the mandatory step-1 "leave the source region" move). */
+/** Legal next-step candidates from `current`: every grid-type neighbor (8-directional square, 6-directional hex — see `neighborsOf`), minus any already used by a river (this one or an earlier one), minus any that would climb to a higher elevation tier (Plains/Badlands/Swamps < Hills < Mountains — rivers never flow uphill), minus any diagonal step that would visually cross an already-used diagonal through the same 2x2 block on a square grid (see `diagonalKey` — hex neighbors always share a real edge, so this check is skipped entirely for a hex grid, there's no equivalent ambiguity to catch), optionally minus a specific region id (the mandatory step-1 "leave the source region" move). */
 function stepCandidates(grid, current, usedCells, usedDiagonals, excludeRegionId = null) {
     let candidates = neighborsOf(grid, current.x, current.y);
     if (excludeRegionId != null) {
@@ -81,10 +87,12 @@ function stepCandidates(grid, current, usedCells, usedDiagonals, excludeRegionId
     }
     candidates = candidates.filter(n => !usedCells.has(cellKey(n.x, n.y)));
     candidates = candidates.filter(n => elevationOf(grid, n) <= elevationOf(grid, current));
-    candidates = candidates.filter(n => {
-        if (n.x === current.x || n.y === current.y) return true; // orthogonal step — no crossing block
-        return !usedDiagonals.has(oppositeDiagonalKey(current, n));
-    });
+    if (grid.type === "square") {
+        candidates = candidates.filter(n => {
+            if (n.x === current.x || n.y === current.y) return true; // orthogonal step — no crossing block
+            return !usedDiagonals.has(oppositeDiagonalKey(current, n));
+        });
+    }
     return candidates;
 }
 
@@ -108,14 +116,16 @@ function borderExitPoint(grid, cell) {
 /**
  * Biased random walk from `source` toward its preferred target (nearest Swamp, unless the
  * river started in a Swamp itself, in which case the preferred target is the map border —
- * same fallback if there are no Swamps at all). Each step weights the 8 neighbor directions
- * that reduce distance to that preferred target 3x more likely than the rest (a judgment
- * call — the brief only said "random, not direct line" — see docs/DECISIONS.md), so the path
- * wanders but trends toward the goal. Never re-enters a cell already used by this river or an
- * earlier one, never takes a diagonal step that would visually cross an already-used diagonal
- * through the same 2x2 block (a river can't slip through the "X" left by an earlier crossing
- * diagonal pair just because it never lands on the same cell — see `diagonalKey`), and never
- * steps uphill (`stepCandidates`) — a step with no legal candidates ends the walk there, same
+ * same fallback if there are no Swamps at all). Each step weights the grid's own neighbor
+ * directions (8 square, 6 hex) that reduce distance to that preferred target 3x more likely
+ * than the rest (a judgment call — the brief only said "random, not direct line" — see
+ * docs/DECISIONS.md), so the path wanders but trends toward the goal. Never re-enters a cell
+ * already used by this river or an earlier one, on a square grid never takes a diagonal step
+ * that would visually cross an already-used diagonal through the same 2x2 block (a river can't
+ * slip through the "X" left by an earlier crossing diagonal pair just because it never lands
+ * on the same cell — see `diagonalKey`; not a concern on a hex grid, where every neighbor
+ * shares a real edge), and never steps uphill (`stepCandidates`) — a step with no legal
+ * candidates ends the walk there, same
  * as running out of room, reported back as `arrived: false` (see
  * walkFromCellUntilArrived, which retries a walk that dead-ends like this, including one
  * that's boxed in because every remaining direction would mean crossing itself or another
@@ -141,9 +151,10 @@ function borderExitPoint(grid, cell) {
  * already claimed — shared across a whole `placeRivers` batch so later rivers route around
  * earlier ones, and seeded with `source` so a river can't immediately double back onto itself.
  * `usedDiagonals` (a `Set` of `diagonalKey` strings, mutated in place alongside it) tracks
- * every diagonal step any river has taken — two diagonal steps can pass through the same 2x2
- * block on opposite diagonals without ever sharing a cell, which would otherwise let a river
- * visually cross itself or another river right through the middle of that block.
+ * every diagonal step any river has taken on a **square** grid — two diagonal steps can pass
+ * through the same 2x2 block on opposite diagonals without ever sharing a cell, which would
+ * otherwise let a river visually cross itself or another river right through the middle of
+ * that block. Left unpopulated and unconsulted on a hex grid, where the concept doesn't apply.
  *
  * @returns {Promise<{path: {x: number, y: number}[], arrived: boolean}>}
  */
@@ -156,7 +167,7 @@ export async function walkFromCell(grid, source, { avoidRegionId = null, startTy
         const differentRegion = stepCandidates(grid, current, usedCells, usedDiagonals, avoidRegionId);
         if (differentRegion.length > 0) {
             const next = await pickRandomCell(differentRegion);
-            if (next.x !== current.x && next.y !== current.y) usedDiagonals.add(diagonalKey(current, next));
+            if (grid.type === "square" && next.x !== current.x && next.y !== current.y) usedDiagonals.add(diagonalKey(current, next));
             current = next;
             path.push(current);
             usedCells.add(cellKey(current.x, current.y));
@@ -165,12 +176,12 @@ export async function walkFromCell(grid, source, { avoidRegionId = null, startTy
 
     const swampCells = cellsOfType(grid, "Swamps");
     const targetIsSwamp = startType !== "Swamps" && swampCells.length > 0;
-    const distanceToTarget = cell => targetIsSwamp ? nearestDistance(cell, swampCells) : distanceToBorder(grid, cell);
+    const distanceToTarget = cell => targetIsSwamp ? nearestDistance(grid, cell, swampCells) : distanceToBorder(grid, cell);
     // The map border is always a valid place for a river to end, even one biased toward a
     // Swamp — a river that reaches the map edge before ever reaching a Swamp just flows off
     // the map there, same as any other river, rather than being forced to keep hunting for a
     // Swamp it may never legally reach.
-    const hasArrived = cell => isBorderCell(grid, cell.x, cell.y) || (targetIsSwamp && isAtOrAdjacentToSwamp(cell, swampCells));
+    const hasArrived = cell => isBorderCell(grid, cell.x, cell.y) || (targetIsSwamp && isAtOrAdjacentToSwamp(grid, cell, swampCells));
 
     const maxSteps = grid.width + grid.height;
     let arrived = false;
@@ -187,7 +198,7 @@ export async function walkFromCell(grid, source, { avoidRegionId = null, startTy
 
         const next = await pickRandomCell(weighted);
         if (!next) break;
-        if (next.x !== current.x && next.y !== current.y) usedDiagonals.add(diagonalKey(current, next));
+        if (grid.type === "square" && next.x !== current.x && next.y !== current.y) usedDiagonals.add(diagonalKey(current, next));
         path.push(next);
         current = next;
         usedCells.add(cellKey(current.x, current.y));
@@ -200,7 +211,7 @@ export async function walkFromCell(grid, source, { avoidRegionId = null, startTy
             path.push(borderExitPoint(grid, current));
         } else {
             const onSwamp = grid.cells.get(cellKey(current.x, current.y))?.terrain === "Swamps";
-            if (!onSwamp) path.push(swampTouchPoint(current, nearestOf(current, swampCells)));
+            if (!onSwamp) path.push(swampTouchPoint(current, nearestOf(grid, current, swampCells)));
         }
     }
 
@@ -236,9 +247,18 @@ export async function walkFromCellUntilArrived(grid, source, options = {}) {
     return lastPath;
 }
 
-/** Euclidean distance from `cell` to the grid's own center point. */
+/**
+ * Grid-type-aware distance (see `cellDistance`) from `cell` to the grid's own center point.
+ * On an even-sized dimension the exact midpoint (e.g. `1.5`) isn't a real cell — fine for a
+ * square grid's plain `Math.hypot`, but hex's offset-to-cube conversion needs an integer row
+ * to convert at all, so the center is rounded to the nearest whole cell for hex only (a
+ * one-cell wobble in an already-approximate "prefer the middle" heuristic, not worth the
+ * complexity of exact fractional cube math for).
+ */
 function distanceToCenter(grid, cell) {
-    return Math.hypot(cell.x - (grid.width - 1) / 2, cell.y - (grid.height - 1) / 2);
+    const cx = (grid.width - 1) / 2, cy = (grid.height - 1) / 2;
+    const center = grid.type === "hex" ? { x: Math.round(cx), y: Math.round(cy) } : { x: cx, y: cy };
+    return cellDistance(grid, cell, center);
 }
 
 /**

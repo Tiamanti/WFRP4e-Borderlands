@@ -15,6 +15,11 @@ describe("region", () => {
             .toMatchObject({ sceneName: "My Region", mapSize: { width: 15, height: 15 } });
     });
 
+    it("defaults geography's grid shape to square, and accepts a hex override", () => {
+        expect(createRegion().geography).toMatchObject({ gridShape: "square" });
+        expect(createRegion({ gridShape: "hex" }).geography).toMatchObject({ gridShape: "hex" });
+    });
+
     it("has no journal folder or geography journal until a phase creates one", () => {
         const region = createRegion();
         expect(region.journalFolderId).toBeNull();

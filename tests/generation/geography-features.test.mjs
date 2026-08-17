@@ -3,8 +3,8 @@ import { createPlacementGrid } from "../../src/generation/geography-grid.mjs";
 import { placeIsolatedMountains, placeSpecialFeatures } from "../../src/generation/geography-features.mjs";
 
 /** Stamps every region's cells onto a grid as claimed terrain, for fully-controlled test setups. */
-function fillGrid(width, height, regions) {
-    const grid = createPlacementGrid(width, height);
+function fillGrid(width, height, regions, type = "square") {
+    const grid = createPlacementGrid(width, height, type);
     for (const region of regions) {
         for (const cell of region.cells) {
             grid.cells.set(`${cell.x},${cell.y}`, {
@@ -133,6 +133,53 @@ describe("placeSpecialFeatures", () => {
         // Cliffs are a boundary line (returned via the dispatcher), not a grid overwrite.
         expect(grid.cells.get("0,0").terrain).toBe("Mountains");
         expect(grid.cells.get("1,0").terrain).toBe("Hills");
+    });
+
+    describe("Cliff on a hex grid — corner-as-3-cube-coordinates math", () => {
+        it("traces the 2-corner boundary between a single adjacent hex pair", async () => {
+            // (2,2) and (3,2) are cube-adjacent on a 5x5 hex grid. Each corner of their
+            // shared edge is identified by the 3 cube coordinates of the (up to 3) hexes
+            // meeting there — here both corners include (2,2) and (3,2) themselves plus one
+            // more real or virtual neighbor apiece, confirmed by running the actual
+            // neighbor-intersection math (`neighborsOfCube(A) ∩ neighborsOfCube(B)`).
+            const grid = fillGrid(5, 5, [
+                { id: 1, type: "Mountains", cells: [{ x: 2, y: 2 }] },
+                { id: 2, type: "Hills", cells: [{ x: 3, y: 2 }] },
+            ], "hex");
+            globalThis.__rollQueue = [1];
+            const { cliffs } = await placeSpecialFeatures([{ feature: "Cliff" }], grid, [], []);
+            expect(cliffs).toHaveLength(1);
+            expect(cliffs[0].path).toEqual([
+                { hexes: [{ q: 1, r: 2, s: -3 }, { q: 2, r: 2, s: -4 }, { q: 2, r: 1, s: -3 }] },
+                { hexes: [{ q: 1, r: 2, s: -3 }, { q: 2, r: 2, s: -4 }, { q: 1, r: 3, s: -4 }] },
+            ]);
+        });
+
+        it("walks a connected multi-segment chain across a 2x2 block of two regions, correctly linking corners by shared hexes", async () => {
+            // A 2-cell Mountains blob against a 2-cell Hills blob traces a single connected
+            // 4-corner / 3-segment chain — every consecutive pair of corners in the path
+            // shares exactly 2 of its 3 cube coordinates (the two hexes bounding that real
+            // edge), which is what proves `walkBoundaryChain`'s generic "compare by .key"
+            // walk is correctly stitching hex corners together, not just square ones.
+            const grid = fillGrid(5, 5, [
+                { id: 1, type: "Mountains", cells: [{ x: 2, y: 2 }, { x: 2, y: 3 }] },
+                { id: 2, type: "Hills", cells: [{ x: 3, y: 2 }, { x: 3, y: 3 }] },
+            ], "hex");
+            globalThis.__rollQueue = [1];
+            const { cliffs } = await placeSpecialFeatures([{ feature: "Cliff" }], grid, [], []);
+            expect(cliffs).toHaveLength(1);
+            const path = cliffs[0].path;
+            expect(path).toHaveLength(4);
+            const cubeKey = h => `${h.q},${h.r}`;
+            const cornerKeys = path.map(c => new Set(c.hexes.map(cubeKey)));
+            for (let i = 1; i < cornerKeys.length; i++) {
+                const shared = [...cornerKeys[i - 1]].filter(k => cornerKeys[i].has(k));
+                expect(shared).toHaveLength(2); // consecutive corners share exactly the edge's 2 hexes
+            }
+            // Every corner is a physically distinct vertex — no accidental collapsing/looping.
+            const allKeys = path.map(c => [...c.hexes.map(cubeKey)].sort().join("|"));
+            expect(new Set(allKeys).size).toBe(4);
+        });
     });
 
     it("Fertile Valley: avoids Swamps when any non-Swamp cell is available", async () => {

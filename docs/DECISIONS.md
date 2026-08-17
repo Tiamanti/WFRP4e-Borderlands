@@ -221,6 +221,140 @@ that locked in the choices below.
   grid this can legitimately exhaust all 20 attempts (see the `placeRivers` preference-order
   test, whose 3-cell-wide grid is too small for a river to ever genuinely arrive).
 
+## Hex grid support
+
+A new **Default Grid Shape** world setting (`defaultGridShape`, "square"/"hex", default
+"square") lets a Scene use hexagonal tiles instead of squares — Geography's placement rules
+(terrain blobs, rivers, cliffs, special features) and Ancient Ruins' Note placement all now
+work for either. See PLAN.md's "Hex grid support" section for the full plan.
+
+- **One hex orientation for v1: pointy-top, odd-row offset** (Foundry's `HEXODDR`). The other
+  3 orientations (flat-top, even-offset) are the same amount of extra work per orientation for
+  no functional gain — the hard part is the square/hex abstraction, not which layout sits
+  behind it — so only one ships now.
+- **World-scope setting only, no per-run command-arg override** — read once by
+  `generateGeography` exactly like `banLargeRegions`, then stored on
+  `region.geography.gridShape` so a re-run of an existing region keeps its original shape even
+  if the setting changes later (mirrors `mapSize`'s own "read once, then fixed" behavior).
+  `createRegion`'s own `gridShape: "square"` default is just an unset placeholder — the read-
+  from-setting-or-reuse-stored-value branch in `generateGeography` keys off whether
+  `region.geography.sceneId` already exists (a real prior run), not off the field's value.
+- **Cells stay addressed by the same `{x, y}` offset coordinates (x = column, y = row) for
+  both grid types** — the single biggest scope-control decision here. `geography-terrain.mjs`,
+  `geography-rivers.mjs`, and `geography-features.mjs` never branch on grid type at all; they
+  only call `neighborsOf`/`cellDistance`/`isBorderCell`/etc. out of `geography-grid.mjs`, which
+  is the only file whose logic actually dispatches on `grid.type`. `isBorderCell`/`allCells`/
+  `freeCells`/`freeBorderCells`/`cellsOfRegion`/`cellsOfType` needed **no changes at all** —
+  border-ness and iteration are rectangle concepts, identical for both types.
+- **Hex neighbor/distance math converts offset coordinates to cube coordinates internally**
+  (`offsetToCube`/`cubeToOffset`, standard odd-r formulas, reimplemented directly rather than
+  relying on Foundry's `HexagonalGrid` class) — cube coordinates make the 6 neighbor
+  directions parity-independent (same 6 deltas regardless of row), where offset coordinates'
+  neighbor deltas differ between even and odd rows. Kept pure/no-Foundry-dependency so this
+  stays unit-testable exactly like the rest of `geography-grid.mjs`.
+- **`cellDistance(grid, a, b)` replaces every hand-rolled `Math.hypot` cell-to-cell call** —
+  Euclidean for square, cube tile-step distance for hex. Raw Euclidean distance on a hex
+  grid's offset coordinates would be wrong (two cells that are genuinely 1 hex-step apart can
+  have very different offset-coordinate deltas depending on row parity). Every distance-based
+  placement rule (Mountains-farthest-from-Swamp, river source/target bias, Cave cluster
+  radius, blob fill order) goes through it, so all of them are automatically correct for
+  either grid type with no rule-specific special-casing.
+- **`distanceToBorder` stays plain offset-rectangle math for both grid types**, deliberately
+  not made hex-aware — it's already just "how far to the nearest edge of the rectangle," a
+  judgment call that's a reasonable river-walk weighting heuristic either way, not worth hex
+  geometry's added complexity for.
+- **Diagonal-crossing prevention (`diagonalKey`/`usedDiagonals`) is square-only** — it exists
+  to catch two river steps that visually cross through the same 2x2 block without ever sharing
+  a cell, a gap specific to a square grid's diagonal neighbors. Hex neighbors always share a
+  real edge, so there's no equivalent ambiguity to catch; `stepCandidates`'s diagonal filter
+  and `walkFromCell`'s diagonal-recording calls are both gated behind `grid.type === "square"`
+  — inert, never populated or consulted, on a hex grid, with no signature changes needed
+  anywhere `usedDiagonals` already threaded through.
+- **Cliff boundary corners on a hex grid are represented as the 3 cube coordinates of the (up
+  to 3) hexes that meet there**, not a real coordinate — unlike a square grid's corners, which
+  land trivially on the offset grid's own integer coordinates. For two cube-adjacent cells A
+  and B, intersecting their two 6-neighbor sets (`neighborsOfCube`, not clipped to the grid —
+  cube math needs no bounds check, so a corner can legitimately involve an off-grid "virtual"
+  third hex right at the map edge) always yields exactly the 2 "third" cells, one per side of
+  the shared edge; the two corners are `[A,B,C1]`/`[A,B,C2]`. `sharedEdgeCorners` attaches a
+  `.key` string to every corner (both grid types) so `segmentsAt`/`walkBoundaryChain` can
+  compare corners by identity alone, never by shape — that's what let the existing connected-
+  boundary walk (`walkBoundaryChain`) plug in for hex with **zero changes to its own logic**.
+  `key` is stripped back out of the final `cliffs[].path` before it's returned, so a square
+  cliff's path keeps the exact plain `{x,y}` shape every existing caller/test already expects.
+- **Hex pixel conversion reuses the live `scene.grid` instance** (`geography-scene.mjs`,
+  `ruins-scene.mjs`) instead of hand-building a second grid object — once `Scene.create()`
+  returns, `scene.grid` is already a real `foundry.grid.HexagonalGrid` matching the Scene's
+  configured type/size, with its own `getCenterPoint`/`getVertices`/`cubeToPoint` methods.
+  Every painter branches on `scene.grid.isHexagonal`. A hex grid cell is painted as a hexagon
+  polygon Drawing (`getVertices`) instead of a rectangle; a Cliff corner's real pixel vertex is
+  the average of its (up to 3) hexes' true `cubeToPoint` centers — geometrically exact for a
+  regular hex tiling, and correct even when one of the 3 is off-grid, since `cubeToPoint` is
+  pure formula with no bounds check.
+- **A river's fractional border/Swamp-touch extension point** (`borderExitPoint`/
+  `swampTouchPoint`, unchanged, still pure offset-coordinate math for both grid types) **is
+  interpreted on a hex Scene by lerping between the real pixel centers of the base cell and
+  the offset cell one step further in the direction each fractional axis points**
+  (`hexRiverPoint`), rather than assuming square grid-line math — an approximation (a true hex
+  neighbor's direction doesn't line up with a square's 8 fixed directions), flagged for visual
+  tuning during manual verification rather than treated as exact geometry.
+- **A hex Scene's pixel `width`/`height` come from the real `HexagonalGrid`'s own
+  `getVertices` bounding box, not `width * gridSize`/`height * gridSize`** — live-tested bug:
+  an odd-row-offset grid isn't a clean rectangle in pixel space. Row-to-row spacing for a
+  pointy-top grid is `gridSize * sqrt(3)/2 ≈ 0.866 * gridSize`, not a full `gridSize`, so
+  sizing the Scene by the square-grid formula left dead space at the bottom; and whichever
+  direction Foundry's actual pixel convention shifts the offset rows (not necessarily the same
+  direction as any logical/axial "odd-r" convention — the two are independent coordinate
+  spaces) pushed some rows' column-0 hex into negative x, clipped by the canvas edge on the
+  left. Fixed by `hexBoundingBox` (`geography-scene.mjs`): take the true min/max over every
+  cell's `getVertices` for the whole grid, size the Scene to that exact box, and stash the
+  resulting `{x,y}` translation as a `hexOffset` Scene flag (`hexOffsetOf`) that every hex
+  painter (`paintGrid`/`paintRivers`/`paintCliffs`, and `ruins-scene.mjs`'s `placeRuinNotes`)
+  adds to every point it computes.
+- **The bounding-box helper takes the Scene's own already-configured `scene.grid` instance —
+  it never constructs a second `HexagonalGrid` of its own** — a second live-tested bug,
+  introduced by the very first version of the fix above: that version built its own `new
+  foundry.grid.HexagonalGrid({size, columns: false, even: false})` to guess at `HEXODDR`'s
+  internal config, and the guess was wrong (every tile ended up offset half a cell
+  horizontally) — the guessed grid's row parity disagreed with the real `scene.grid`'s, so the
+  bounding box measured against one didn't correctly align with vertices painted from the
+  other. Fixed by creating the Scene first (at the naive, possibly-wrong `width * gridSize`
+  size), then measuring against that Scene's own real `scene.grid`.
+- **Painted hex content is never translated — every painter uses `scene.grid`'s raw output
+  as-is** — a third live-tested bug: the version above this one also *translated* every
+  painted point by the bounding box's `-minX/-minY`, to pull negative-x content on-canvas.
+  That drifted every Drawing away from Foundry's own native grid-line rendering, which draws
+  straight from `scene.grid`'s untranslated math with no knowledge of any extra shift applied
+  on top — confirmed by a live screenshot showing our tiles' first row starting with a full
+  cell while Foundry's own grid lines correctly showed it as a half-cell (a rectangular
+  offset-coordinate hex grid's normal, expected look — the same jagged/sawtooth edge every hex
+  map tool produces, not a defect to hide). Fixed by dropping the translation entirely
+  (`hexPixelExtent`, formerly `hexBoundingBox`, now only used to size the Scene's `width`/
+  `height` to the grid's true `maxX`/`maxY` — no `minX`/`minY` tracking, no offset, no Scene
+  flag) — every hex painter's points are now pixel-identical to Foundry's own grid lines by
+  construction, since both come from the exact same untranslated `scene.grid` math.
+- **Foundry's raw `HEXODDR` grid clips the left point of every even row's (0, 2, 4, ...) cells,
+  not row 0's top** — a fourth live-tested bug, found after the fix above: with translation
+  gone and every painter using `scene.grid`'s raw output directly, cells still rendered
+  clipped. The first attempt at a fix (below, kept only as a lesson) guessed the clipping was
+  vertical — Foundry's raw row 0 sitting exactly on the Scene's top edge — and tried skipping
+  it (`detectHexRowShift`, shifting every row index by 1); live-tested and **produced no
+  visible change at all**, the wrong axis entirely. The real fix, from the user's own precise
+  diagnosis after that miss: it's horizontal, and specific to even rows — an even row's own
+  column 0 cell needs to start from Foundry's raw column `x + 1`, not `x`, while odd rows are
+  untouched (`hexColumnOf(x, y) = y % 2 === 0 ? x + 1 : x`, `geography-scene.mjs`). Every hex
+  painter (`paintGrid`, `paintRivers`'s `hexRiverPoint`, `paintCliffs`, and
+  `ruins-scene.mjs`'s `placeRuinNotes`) routes every `{i, j}` lookup through it instead of using
+  `x` directly. No detection/flag needed this time — it's a fixed per-row-parity rule, not
+  something to guess and store. Cliff corners need one extra step since their
+  `{hexes: [cube,cube,cube]}` are pure logical cube coordinates from `geography-features.mjs`
+  (grid-shape-agnostic, unaware of Foundry's raw column layout) — each is round-tripped
+  offset→`hexColumnOf`→cube (`cubeToOffset`/`offsetToCube`, both exported from
+  `geography-grid.mjs`) before `cubeToPoint`. `hexPixelExtent` scans the same `hexColumnOf`-
+  shifted columns rather than `0..width-1`, so the Scene comes out correctly wider (about half
+  a tile, from even rows needing one extra column of run-up room) — the exact amount falls out
+  of the live grid's own vertex geometry rather than being hand-computed as a fraction.
+
 ## Ancient Ruins
 
 - One-shot batch generation via the generic `runPhase` flow — no per-step GM decision the

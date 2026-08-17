@@ -4,6 +4,7 @@ export const SETTINGS = {
     defaultMapSize: "defaultMapSize",
     banLargeRegions: "banLargeRegions",
     generateNames: "generateNames",
+    defaultGridShape: "defaultGridShape",
 };
 
 export function registerSettings() {
@@ -32,5 +33,18 @@ export function registerSettings() {
         config: true,
         type: Boolean,
         default: true,
+    });
+
+    game.settings.register(MODULE_ID, SETTINGS.defaultGridShape, {
+        name: "BORDERLANDS.Settings.DefaultGridShape.Name",
+        hint: "BORDERLANDS.Settings.DefaultGridShape.Hint",
+        scope: "world",
+        config: true,
+        type: String,
+        choices: {
+            square: "BORDERLANDS.Settings.DefaultGridShape.Square",
+            hex: "BORDERLANDS.Settings.DefaultGridShape.Hex",
+        },
+        default: "square",
     });
 }

@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach } from "vitest";
 import {
     createPlacementGrid, isBorderCell, allCells, freeCells, freeBorderCells,
     cellsOfRegion, cellsOfType, neighborsOf, cellsAdjacentTo, nearestDistance,
-    distanceToBorder, pickRandomCell, claimBlobFromSeed,
+    distanceToBorder, pickRandomCell, claimBlobFromSeed, cellDistance,
 } from "../../src/generation/geography-grid.mjs";
 
 describe("geography-grid", () => {
@@ -48,6 +48,37 @@ describe("geography-grid", () => {
         expect(neighborsOf(grid, 0, 0)).toHaveLength(3); // corner: only 3 neighbors exist
     });
 
+    describe("hex grid (pointy-top, odd-row offset)", () => {
+        it("neighborsOf is 6-directional on an interior cell, with the correct offset set for an even row", () => {
+            const grid = createPlacementGrid(5, 5, "hex");
+            const keys = neighborsOf(grid, 2, 2).map(c => `${c.x},${c.y}`).sort();
+            expect(keys).toEqual(["1,1", "1,2", "1,3", "2,1", "2,3", "3,2"]);
+        });
+
+        it("neighborsOf's offset set shifts on an odd row (odd-r: odd rows offset right)", () => {
+            const grid = createPlacementGrid(5, 5, "hex");
+            const keys = neighborsOf(grid, 2, 1).map(c => `${c.x},${c.y}`).sort();
+            expect(keys).toEqual(["1,1", "2,0", "2,2", "3,0", "3,1", "3,2"]);
+        });
+
+        it("neighborsOf is clipped to bounds at a corner", () => {
+            const grid = createPlacementGrid(5, 5, "hex");
+            const keys = neighborsOf(grid, 0, 0).map(c => `${c.x},${c.y}`).sort();
+            expect(keys).toEqual(["0,1", "1,0"]);
+        });
+
+        it("cellDistance is hex tile-step distance, not Euclidean, and disagrees with the square metric on the same coordinates", () => {
+            const grid = createPlacementGrid(10, 10, "hex");
+            const squareGrid = createPlacementGrid(10, 10);
+            // (0,0) to (2,2) is 3 hex tile-steps apart, but their Euclidean distance is ~2.83 —
+            // the two metrics must disagree here, or the hex branch isn't actually exercised.
+            expect(cellDistance(grid, { x: 0, y: 0 }, { x: 2, y: 2 })).toBe(3);
+            expect(cellDistance(squareGrid, { x: 0, y: 0 }, { x: 2, y: 2 })).toBeCloseTo(2.828, 2);
+            // Adjacent hex neighbors are always exactly 1 apart, same as square's orthogonal case.
+            expect(cellDistance(grid, { x: 2, y: 2 }, { x: 1, y: 1 })).toBe(1);
+        });
+    });
+
     it("cellsAdjacentTo returns free cells touching a set, excluding the set itself and claimed cells", () => {
         const grid = createPlacementGrid(3, 3);
         grid.cells.set("0,0", { kind: "terrain", terrain: "Mountains", regionId: 1 });
@@ -59,8 +90,9 @@ describe("geography-grid", () => {
     });
 
     it("nearestDistance is Infinity for an empty target set, else the closest Euclidean distance", () => {
-        expect(nearestDistance({ x: 0, y: 0 }, [])).toBe(Infinity);
-        expect(nearestDistance({ x: 0, y: 0 }, [{ x: 3, y: 4 }, { x: 1, y: 0 }])).toBe(1);
+        const grid = createPlacementGrid(5, 5);
+        expect(nearestDistance(grid, { x: 0, y: 0 }, [])).toBe(Infinity);
+        expect(nearestDistance(grid, { x: 0, y: 0 }, [{ x: 3, y: 4 }, { x: 1, y: 0 }])).toBe(1);
     });
 
     it("distanceToBorder is the min distance to any of the four edges", () => {
@@ -106,6 +138,13 @@ describe("geography-grid", () => {
             for (const cell of second) {
                 expect(firstKeys.has(`${cell.x},${cell.y}`)).toBe(false);
             }
+        });
+
+        it("on a hex grid, claims the seed's 6 tile-step-1 neighbors before anything farther away", () => {
+            const grid = createPlacementGrid(5, 5, "hex");
+            const claimed = claimBlobFromSeed(grid, { x: 2, y: 2 }, 7, { kind: "terrain", terrain: "Hills", regionId: 1 });
+            const keys = claimed.map(c => `${c.x},${c.y}`).sort();
+            expect(keys).toEqual(["1,1", "1,2", "1,3", "2,1", "2,2", "2,3", "3,2"]);
         });
     });
 });

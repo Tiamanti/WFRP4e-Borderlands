@@ -21,5 +21,9 @@
   "BORDERLANDS.Settings.BanLargeRegions.Name": "Ban Large Geography Regions",
   "BORDERLANDS.Settings.BanLargeRegions.Hint": "On maps under 500 squares, rerolls Table 1-1 results of 81-99 (without increasing the running bonus); on maps of 500 squares or more, only 91-99 are banned. Keeps a single terrain feature from overwhelming a small map.",
   "BORDERLANDS.Settings.GenerateNames.Name": "Generate Names",
-  "BORDERLANDS.Settings.GenerateNames.Hint": "Generates place names for settlements using Appendix I's naming tables (biased toward the owning Prince's cultural style)."
+  "BORDERLANDS.Settings.GenerateNames.Hint": "Generates place names for settlements using Appendix I's naming tables (biased toward the owning Prince's cultural style).",
+  "BORDERLANDS.Settings.DefaultGridShape.Name": "Default Grid Shape",
+  "BORDERLANDS.Settings.DefaultGridShape.Hint": "The Scene grid every new Geography generation paints onto. Hex uses pointy-top, odd-row-offset hexagons.",
+  "BORDERLANDS.Settings.DefaultGridShape.Square": "Square",
+  "BORDERLANDS.Settings.DefaultGridShape.Hex": "Hex"
 }

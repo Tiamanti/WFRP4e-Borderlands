@@ -15,12 +15,12 @@ function orFallback(list, fallback) {
 }
 
 /** Deterministic "which candidate maximizes its min-distance to targets" pick — not random, so no Roll call; ties go to the first candidate in scan order. */
-function farthestFrom(candidates, targets) {
+function farthestFrom(grid, candidates, targets) {
     if (candidates.length === 0 || targets.length === 0) return null;
     let best = candidates[0];
-    let bestDist = nearestDistance(best, targets);
+    let bestDist = nearestDistance(grid, best, targets);
     for (const c of candidates.slice(1)) {
-        const d = nearestDistance(c, targets);
+        const d = nearestDistance(grid, c, targets);
         if (d > bestDist) { bestDist = d; best = c; }
     }
     return best;
@@ -58,7 +58,7 @@ async function seedForMountains(grid, index, swampRegions) {
     if (border.length === 0) return pickRandomCell(freeCells(grid));
 
     const swampCells = swampRegions.flatMap(r => r.cells);
-    return farthestFrom(border, swampCells) ?? (await pickRandomCell(border));
+    return farthestFrom(grid, border, swampCells) ?? (await pickRandomCell(border));
 }
 
 /** Every Hills roll seeds from a random free cell adjacent to Mountains, or a random free cell anywhere if there are none (or none are free). */
@@ -84,7 +84,7 @@ function placeRegion(grid, regions, id, roll, seed) {
  * no separate "fill gaps" pass is needed. Returns `{ grid, regions }`.
  */
 export async function placeTerrainRolls(terrainRolls, mapSize) {
-    const grid = createPlacementGrid(mapSize.width, mapSize.height);
+    const grid = createPlacementGrid(mapSize.width, mapSize.height, mapSize.type);
     const regions = [];
     let nextId = 1;
 

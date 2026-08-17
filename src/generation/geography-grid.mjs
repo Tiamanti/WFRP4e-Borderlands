@@ -7,9 +7,59 @@ function cellKey(x, y) {
     return `${x},${y}`;
 }
 
-/** Creates an empty width x height placement grid. Cells are added to `cells` as they're claimed. */
-export function createPlacementGrid(width, height) {
-    return { width, height, cells: new Map() };
+/**
+ * Creates an empty width x height placement grid, `type` "square" (default) or "hex" (pointy-
+ * top, odd-row offset — Foundry's HEXODDR, the only hex orientation this module supports; see
+ * docs/DECISIONS.md). Cells are always addressed by the same `{x, y}` offset coordinates (x =
+ * column, y = row) regardless of `type` — every placement module above this one is written
+ * purely in terms of `neighborsOf`/`cellDistance`/etc. and never needs to know which grid type
+ * is active; only this file's neighbor/distance math actually branches on it.
+ */
+export function createPlacementGrid(width, height, type = "square") {
+    return { width, height, type, cells: new Map() };
+}
+
+/**
+ * Offset (x = column, y = row) <-> cube coordinate conversion for a pointy-top, odd-row-offset
+ * ("odd-r") hex grid — https://www.redblobgames.com/grids/hexagons/ is the reference. Cube
+ * coordinates (q, r, s; q + r + s = 0) are what make neighbor/distance math parity-independent:
+ * every hex has the same 6 cube-direction neighbors regardless of which row it's on, unlike
+ * offset coordinates where the neighbor deltas differ between even and odd rows.
+ */
+export function offsetToCube(x, y) {
+    const q = x - (y - (y & 1)) / 2;
+    const r = y;
+    return { q, r, s: -q - r };
+}
+
+export function cubeToOffset({ q, r }) {
+    return { x: q + (r - (r & 1)) / 2, y: r };
+}
+
+const CUBE_DIRECTIONS = [
+    { q: 1, r: 0, s: -1 }, { q: 1, r: -1, s: 0 }, { q: 0, r: -1, s: 1 },
+    { q: -1, r: 0, s: 1 }, { q: -1, r: 1, s: 0 }, { q: 0, r: 1, s: -1 },
+];
+
+/** The 6 cube-coordinate neighbors of a cell, not clipped to any grid bounds (used for cliffs' off-grid-safe corner math). */
+export function neighborsOfCube(cube) {
+    return CUBE_DIRECTIONS.map(d => ({ q: cube.q + d.q, r: cube.r + d.r, s: cube.s + d.s }));
+}
+
+/**
+ * Distance between two cells, grid-type aware: Euclidean for a square grid, hex-tile-step
+ * ("cube") distance for a hex grid — using raw Euclidean distance on a hex grid's offset
+ * coordinates would be wrong (adjacent hexes on the same row are 1 apart, but adjacent hexes on
+ * a different row are also 1 apart despite an uneven offset-coordinate delta). This is the one
+ * distance primitive every placement rule (Mountains-farthest-from-Swamp, river source/target
+ * bias, Cave cluster radius, blob fill order) is expected to go through instead of hand-rolling
+ * `Math.hypot`, so every one of those rules is automatically correct for both grid types.
+ */
+export function cellDistance(grid, a, b) {
+    if (grid.type !== "hex") return Math.hypot(a.x - b.x, a.y - b.y);
+    const ca = offsetToCube(a.x, a.y);
+    const cb = offsetToCube(b.x, b.y);
+    return (Math.abs(ca.q - cb.q) + Math.abs(ca.r - cb.r) + Math.abs(ca.s - cb.s)) / 2;
 }
 
 export function isBorderCell(grid, x, y) {
@@ -64,12 +114,20 @@ const NEIGHBOR_OFFSETS = [
 ];
 
 /**
- * 8-directional (orthogonal + diagonal) neighbor coordinates of a single cell, clipped to
- * the grid bounds. 8-directional adjacency is used everywhere in the redesign — border
- * adjacency, Hills-near-Mountains, river step neighbors — for a more organic look than a
- * 4-directional grid produces; a judgment call, see docs/DECISIONS.md.
+ * Neighbor coordinates of a single cell, clipped to the grid bounds: 8-directional (orthogonal
+ * + diagonal) for a square grid — used everywhere in the redesign for a more organic look than
+ * a 4-directional grid produces, a judgment call, see docs/DECISIONS.md — or the natural
+ * 6-directional neighbor set for a hex grid (every placement rule that says "8-directional"
+ * just uses however many neighbors the active grid type actually has, no rule-specific
+ * special-casing; see docs/DECISIONS.md's "Hex grid support" entries).
  */
 export function neighborsOf(grid, x, y) {
+    if (grid.type === "hex") {
+        const cube = offsetToCube(x, y);
+        return neighborsOfCube(cube)
+            .map(cubeToOffset)
+            .filter(n => n.x >= 0 && n.x < grid.width && n.y >= 0 && n.y < grid.height);
+    }
     const neighbors = [];
     for (const { dx, dy } of NEIGHBOR_OFFSETS) {
         const nx = x + dx, ny = y + dy;
@@ -78,7 +136,7 @@ export function neighborsOf(grid, x, y) {
     return neighbors;
 }
 
-/** Free cells 8-directionally adjacent to any cell in `cells` (deduplicated, excludes `cells` themselves). */
+/** Free cells adjacent (per `neighborsOf` — 8-directional square, 6-directional hex) to any cell in `cells` (deduplicated, excludes `cells` themselves). */
 export function cellsAdjacentTo(grid, cells) {
     const source = new Set(cells.map(c => cellKey(c.x, c.y)));
     const seen = new Set();
@@ -94,12 +152,12 @@ export function cellsAdjacentTo(grid, cells) {
     return result;
 }
 
-/** Euclidean min-distance from one cell to the nearest of a set of target cells (Infinity if none). */
-export function nearestDistance(cell, targets) {
+/** Grid-type-aware min-distance (see `cellDistance`) from one cell to the nearest of a set of target cells (Infinity if none). */
+export function nearestDistance(grid, cell, targets) {
     if (targets.length === 0) return Infinity;
     let best = Infinity;
     for (const t of targets) {
-        const d = Math.hypot(cell.x - t.x, cell.y - t.y);
+        const d = cellDistance(grid, cell, t);
         if (d < best) best = d;
     }
     return best;
@@ -132,7 +190,7 @@ export async function pickRandomCell(candidates) {
  */
 export function claimBlobFromSeed(grid, seed, count, meta) {
     const candidates = freeCells(grid)
-        .map(c => ({ ...c, dist: Math.hypot(c.x - seed.x, c.y - seed.y) }))
+        .map(c => ({ ...c, dist: cellDistance(grid, c, seed) }))
         .sort((a, b) => a.dist - b.dist || (a.x + a.y) - (b.x + b.y) || a.x - b.x);
 
     const claimed = [];

@@ -5,6 +5,7 @@
 
 import { RUIN_TYPE_DESCRIPTIONS, MENACE_DESCRIPTIONS, PURPOSE_DESCRIPTIONS, REASON_DESCRIPTIONS } from "../tables/ruins.mjs";
 import { getOrCreateJournalFolder } from "./journal-folder.mjs";
+import { hexColumnOf } from "./geography-scene.mjs";
 
 function renderRuinPageHtml(ruin) {
     const purposeText = ruin.purpose
@@ -35,14 +36,16 @@ export async function createRuinsJournal(region, ruins) {
     return { journal, pages };
 }
 
-/** One Note per ruin, deep-linked to its journal page, centered on its grid cell. */
+/** One Note per ruin, deep-linked to its journal page, centered on its grid cell (real hex center on a hex Scene, via the live `scene.grid` instance — `ruins.mjs`'s own cell picking is grid-shape-agnostic, it never needs to know which type is active). Column resolved through geography-scene.mjs's `hexColumnOf` so Notes land on the same Foundry columns the painted terrain Drawings use. */
 export async function placeRuinNotes(scene, journal, ruins, pages) {
     const gridSize = scene.grid.size;
+    const centerOf = scene.grid.isHexagonal
+        ? cell => scene.grid.getCenterPoint({ i: cell.y, j: hexColumnOf(cell.x, cell.y) })
+        : cell => ({ x: cell.x * gridSize + gridSize / 2, y: cell.y * gridSize + gridSize / 2 });
     const notes = ruins.map((ruin, i) => ({
         entryId: journal.id,
         pageId: pages[i].id,
-        x: ruin.cell.x * gridSize + gridSize / 2,
-        y: ruin.cell.y * gridSize + gridSize / 2,
+        ...centerOf(ruin.cell),
         text: ruin.type,
     }));
     return scene.createEmbeddedDocuments("Note", notes);

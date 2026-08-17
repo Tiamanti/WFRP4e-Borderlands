@@ -120,19 +120,26 @@ export async function rollGeographyBatch({ width, height, banLargeRegions = fals
 export async function generateGeography(region) {
     const { width, height } = region.geography.mapSize;
     const banLargeRegions = game.settings.get(MODULE_ID, SETTINGS.banLargeRegions);
+    // Read from the setting only on this region's first Geography run (no scene yet) — a
+    // re-run reuses whatever gridShape that first run stored, even if the world setting
+    // changes later, same as mapSize already behaves. `createRegion`'s own "square" default is
+    // just an unset placeholder, not a prior run's real choice.
+    const gridShape = region.geography.sceneId
+        ? region.geography.gridShape
+        : game.settings.get(MODULE_ID, SETTINGS.defaultGridShape);
 
     const { log } = await rollGeographyBatch({ width, height, banLargeRegions });
     const terrainRolls = log.filter(entry => entry.type === "terrain");
     const riverRolls = log.filter(entry => entry.type === "river");
     const specialRolls = log.filter(entry => entry.type === "special");
 
-    const { grid, regions } = await placeTerrainRolls(terrainRolls, { width, height });
+    const { grid, regions } = await placeTerrainRolls(terrainRolls, { width, height, type: gridShape });
     await placeIsolatedMountains(specialRolls, grid);
     const { rivers } = await placeRivers(riverRolls, grid, regions);
     const remainingSpecialRolls = specialRolls.filter(roll => roll.feature !== "Isolated Mountain");
     const { cliffs } = await placeSpecialFeatures(remainingSpecialRolls, grid, regions, rivers);
 
-    const scene = await createGeographyScene(region, { width, height });
+    const scene = await createGeographyScene(region, { width, height, gridShape });
     await paintGrid(scene, grid);
     await paintRivers(scene, rivers);
     await paintCliffs(scene, cliffs);
@@ -140,5 +147,5 @@ export async function generateGeography(region) {
     const journal = await createGeographyJournal(region, log, { regions, rivers, cliffs });
     await postGeographySummary(region, log, regions, rivers, cliffs);
 
-    return { geography: { ...region.geography, sceneId: scene.id, journalId: journal.id, log } };
+    return { geography: { ...region.geography, gridShape, sceneId: scene.id, journalId: journal.id, log } };
 }

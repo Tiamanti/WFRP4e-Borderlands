@@ -13,15 +13,17 @@ npm test         # vitest unit tests (Node, stubs in tests/setup.mjs)
 ## Status
 
 All six SPECS.md phases are implemented and committed. Ancient Ruins through Settlements are
-manually verified in a live Foundry world; Hazards, the 3 settings, and the redesigned
+manually verified in a live Foundry world; Hazards, the 4 settings, and the redesigned
 region-aware Geography phase (below) are implemented and committed but not yet confirmed
-working in-game — check before relying on them. See `docs/DECISIONS.md` for the "why" behind
-every non-obvious call below, and `PLAN.md` for the full narrative if `docs/DECISIONS.md`
-isn't enough detail.
+working in-game — check before relying on them. Hex grid support specifically (Default Grid
+Shape setting) is implemented and unit-tested but has **never been run against a live Foundry
+world at all** — check that first if you're about to rely on it. See `docs/DECISIONS.md` for
+the "why" behind every non-obvious call below, and `PLAN.md` for the full narrative if
+`docs/DECISIONS.md` isn't enough detail.
 
 | Phase | Tables | Trigger | Foundry output |
 |---|---|---|---|
-| 1. Geography | 1-1, 1-2 | Generic one-shot `runPhase` | Scene (Global Illumination on) painted with one `Drawing` per grid cell — terrain clustered by type (Swamps/Mountains on the border, Hills hugging Mountains), rivers/cliffs as freehand `Drawing` polygons, Special Features overwriting terrain per their own placement rule |
+| 1. Geography | 1-1, 1-2 | Generic one-shot `runPhase` | Scene (Global Illumination on, square or hex grid per the Default Grid Shape setting) painted with one `Drawing` per grid cell — terrain clustered by type (Swamps/Mountains on the border, Hills hugging Mountains), rivers/cliffs as freehand `Drawing` polygons, Special Features overwriting terrain per their own placement rule |
 | 2. Ancient Ruins | 1-3..1-8 | Generic one-shot `runPhase` | One page per ruin in `"<Map Name> - Ancient Ruins"`; a scene `Note` per ruin deep-links to its page |
 | 3. Princes | 1-3, 2-1..2-11 | Generic one-shot `runPhase` | `npc` Actors (linked Career/Skill/Talent Items, resolved against the required `wfrp4e-core` compendiums) in a shared `"<Map Name>"` Actor folder |
 | 4. Relationships | 2-12..2-22 | Generic one-shot `runPhase` | One page **per prince** in `"<Map Name> - Relationships"`; mutual natures (Alliance/Rivalry/War) on both pages, one-directional natures only on the feeling prince's page |
@@ -33,16 +35,20 @@ See `SPECS.md` for the rules process and table page references, and `DEVELOPMENT
 
 ## Settings
 
-3 world-scope settings (`src/settings.mjs`, registered `Hooks.once("init")`): **Default Map
+4 world-scope settings (`src/settings.mjs`, registered `Hooks.once("init")`): **Default Map
 Size** (`defaultMapSize`, String "WxH", default `"20x20"` — `/borderlands`'s fallback when no
 `mapSize=WxH` arg is given). **Ban Large Geography Regions** (`banLargeRegions`, Boolean,
 default `false` — rerolls Table 1-1 results of 81-99 on maps under 500 squares, 91-99 on
-500+, without bumping the running bonus). **Generate Names** (`generateNames`, Boolean,
-default `true` — names every settlement using Appendix I's naming tables
-(`tables/names.mjs`), biased 50% toward the owning prince's race-mapped cultural style, 10%
-each toward the other 5; the uncontrolled area's settlements bias toward Flavourful, the
-"native" style. Princes deliberately do **not** get a generated personal name — left to the
-GM, per direction).
+500+, without bumping the running bonus). **Default Grid Shape** (`defaultGridShape`, String
+`"square"`/`"hex"` with a `choices` dropdown, default `"square"` — hex is pointy-top, odd-row
+offset only (Foundry's `HEXODDR`); read once by `generateGeography` on a region's first
+Geography run, then stored on `region.geography.gridShape` so a re-run keeps its original
+shape even if the setting changes later — see `docs/DECISIONS.md`'s "Hex grid support").
+**Generate Names** (`generateNames`, Boolean, default `true` — names every settlement using
+Appendix I's naming tables (`tables/names.mjs`), biased 50% toward the owning prince's
+race-mapped cultural style, 10% each toward the other 5; the uncontrolled area's settlements
+bias toward Flavourful, the "native" style. Princes deliberately do **not** get a generated
+personal name — left to the GM, per direction).
 
 ## Invariants
 

@@ -19,13 +19,16 @@ export const REGION_PHASES = [
 ];
 
 /** Empty region data shape — one array/object per phase's output. */
-export function createRegion({ sceneName = "Borderlands", mapSize = { width: 20, height: 20 } } = {}) {
+export function createRegion({ sceneName = "Borderlands", mapSize = { width: 20, height: 20 }, gridShape = "square" } = {}) {
     return {
         // Shared by every phase's Journal Entries (see generation/journal-folder.mjs) —
         // one "<Map Name>" folder holds Geography's, Ruins', etc. journals together.
         journalFolderId: null,
         actorFolderId: null,
-        geography: { sceneId: null, sceneName, mapSize, journalId: null, log: [] },
+        // gridShape ("square" | "hex") is set once from the Default Grid Shape setting when
+        // Geography first runs, then stays fixed for this region — a re-run reuses it rather
+        // than re-reading the setting, same as mapSize already behaves.
+        geography: { sceneId: null, sceneName, mapSize, gridShape, journalId: null, log: [] },
         ruins: { journalId: null, entries: [] },
         princes: { entries: [] },
         relationships: { journalId: null, entries: [] },

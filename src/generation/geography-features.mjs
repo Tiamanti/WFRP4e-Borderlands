@@ -7,7 +7,7 @@
 // is anchored to a river's path, and rivers can legitimately reach the border by design.
 // Pure grid math — no Foundry dependency.
 
-import { allCells, isBorderCell, pickRandomCell } from "./geography-grid.mjs";
+import { allCells, isBorderCell, pickRandomCell, cellDistance, offsetToCube, neighborsOfCube, neighborsOf } from "./geography-grid.mjs";
 import { walkRiverPath, walkFromCellUntilArrived, pickStartRegion, diagonalKey } from "./geography-rivers.mjs";
 
 function cellKey(x, y) {
@@ -107,11 +107,11 @@ async function placeCaves(grid, roll) {
 
     for (let i = 1; i < entranceCount; i++) {
         const isEntrance = c => entrances.some(e => e.x === c.x && e.y === c.y);
-        const withinRadius = cells.filter(c => !isEntrance(c) && Math.hypot(c.x - first.x, c.y - first.y) <= roll.size);
+        const withinRadius = cells.filter(c => !isEntrance(c) && cellDistance(grid, c, first) <= roll.size);
         let next = await pickRandomCell(withinRadius);
         if (!next) {
             const remaining = cells.filter(c => !isEntrance(c))
-                .sort((a, b) => Math.hypot(a.x - first.x, a.y - first.y) - Math.hypot(b.x - first.x, b.y - first.y));
+                .sort((a, b) => cellDistance(grid, a, first) - cellDistance(grid, b, first));
             next = remaining[0] ?? null;
         }
         if (!next) break;
@@ -121,16 +121,49 @@ async function placeCaves(grid, roll) {
     return entrances;
 }
 
-/** The two grid-corner points of the shared edge between two axis-adjacent cells `a`/`b`, in cell-corner (not cell-center) coordinates. */
-function sharedEdgeCorners(a, b) {
-    if (a.x !== b.x) {
-        const x = Math.max(a.x, b.x);
-        const y = Math.min(a.y, b.y);
-        return [{ x, y }, { x, y: y + 1 }];
+/**
+ * The two corners of the shared edge between two adjacent cells `a`/`b`, each corner carrying
+ * its own `key` — a string uniquely identifying that physical corner, so the same corner
+ * reached from two different cell pairs compares equal. `segmentsAt`/`walkBoundaryChain` only
+ * ever compare corners by `.key`, never by shape, which is what lets the same topological walk
+ * work for either grid type below unmodified.
+ *
+ * Square: the two exact integer grid-line-intersection points bounding the shared edge between
+ * axis-adjacent cells — cheap, since square corners already land on the offset grid's own
+ * integer coordinates.
+ *
+ * Hex: there's no equivalently trivial coordinate for a hex vertex, so a corner is represented
+ * topologically instead — **the 3 cube coordinates of the (up to 3) hexes that meet there**.
+ * For two cube-adjacent cells A and B, intersecting their two 6-neighbor sets
+ * (`neighborsOfCube`, not clipped to the grid — a corner can legitimately involve an off-grid
+ * "virtual" third hex at the map edge, and cube math needs no bounds check to stay correct)
+ * always yields exactly the 2 "third" cells, one per side of the shared edge. The two corners
+ * are `[A,B,C1]` and `[A,B,C2]`; `key` is those 3 cube coordinates sorted and joined, so two
+ * segments that share a real vertex always compute the identical key regardless of which two
+ * of the corner's (up to 3) hexes each segment happened to be built from.
+ */
+function sharedEdgeCorners(grid, a, b) {
+    if (grid.type !== "hex") {
+        if (a.x !== b.x) {
+            const x = Math.max(a.x, b.x);
+            const y = Math.min(a.y, b.y);
+            return [{ x, y, key: cellKey(x, y) }, { x, y: y + 1, key: cellKey(x, y + 1) }];
+        }
+        const y = Math.max(a.y, b.y);
+        const x = Math.min(a.x, b.x);
+        return [{ x, y, key: cellKey(x, y) }, { x: x + 1, y, key: cellKey(x + 1, y) }];
     }
-    const y = Math.max(a.y, b.y);
-    const x = Math.min(a.x, b.x);
-    return [{ x, y }, { x: x + 1, y }];
+
+    const cubeKey = c => `${c.q},${c.r}`;
+    const cornerKey = cubes => cubes.map(cubeKey).sort().join("|");
+    const cubeA = offsetToCube(a.x, a.y);
+    const cubeB = offsetToCube(b.x, b.y);
+    const bNeighborKeys = new Set(neighborsOfCube(cubeB).map(cubeKey));
+    const common = neighborsOfCube(cubeA).filter(c => bNeighborKeys.has(cubeKey(c)));
+    return common.map(third => {
+        const hexes = [cubeA, cubeB, third];
+        return { hexes, key: cornerKey(hexes) };
+    });
 }
 
 /**
@@ -138,7 +171,7 @@ function sharedEdgeCorners(a, b) {
  * Used to extend a walk one hop at a time — see placeCliff.
  */
 function segmentsAt(touching, visited, corner) {
-    return (touching.get(cellKey(corner.x, corner.y)) ?? []).filter(i => !visited.has(i));
+    return (touching.get(corner.key) ?? []).filter(i => !visited.has(i));
 }
 
 /**
@@ -148,7 +181,8 @@ function segmentsAt(touching, visited, corner) {
  * third blob wedging in between, or it simply ends) both stop the walk there rather than
  * jumping to an unrelated, disconnected part of the same region pair's border elsewhere on
  * the map. `excludeSegIndex` seeds `visited` so the walk doesn't immediately double back over
- * the segment it started from.
+ * the segment it started from. Grid-type-agnostic — corners are only ever compared by `.key`
+ * (see `sharedEdgeCorners`), never by shape.
  */
 function walkBoundaryChain(segments, touching, startCorner, excludeSegIndex) {
     const visited = new Set([excludeSegIndex]);
@@ -160,7 +194,7 @@ function walkBoundaryChain(segments, touching, startCorner, excludeSegIndex) {
         const segIndex = candidates[0];
         visited.add(segIndex);
         const [c1, c2] = segments[segIndex];
-        const next = cellKey(c1.x, c1.y) === cellKey(current.x, current.y) ? c2 : c1;
+        const next = c1.key === current.key ? c2 : c1;
         points.push(next);
         current = next;
     }
@@ -179,14 +213,18 @@ function walkBoundaryChain(segments, touching, startCorner, excludeSegIndex) {
  * stops.
  */
 async function placeCliff(grid, cliffs) {
+    /** Neighbor cells to pair `(x,y)` against so each undirected edge is only visited once — the two "forward" axis directions for square, or the natural forward half of `neighborsOf`'s 6 hex directions (hex neighbors are always edge-sharing, unlike a square grid's diagonal neighbors, so no axis restriction is needed there). */
+    const forwardNeighbors = (x, y) => grid.type === "hex"
+        ? neighborsOf(grid, x, y).filter(n => n.y > y || (n.y === y && n.x > x))
+        : [[x + 1, y], [x, y + 1]].map(([nx, ny]) => ({ x: nx, y: ny })).filter(n => n.x < grid.width && n.y < grid.height);
+
     const buildPairs = excludeBorder => {
         const pairs = [];
         for (const { x, y } of allCells(grid)) {
             if (excludeBorder && isBorderCell(grid, x, y)) continue;
             const cell = grid.cells.get(cellKey(x, y));
             if (!cell || cell.regionId == null) continue;
-            for (const [nx, ny] of [[x + 1, y], [x, y + 1]]) {
-                if (nx >= grid.width || ny >= grid.height) continue;
+            for (const { x: nx, y: ny } of forwardNeighbors(x, y)) {
                 if (excludeBorder && isBorderCell(grid, nx, ny)) continue;
                 const neighbor = grid.cells.get(cellKey(nx, ny));
                 if (neighbor && neighbor.regionId != null && neighbor.regionId !== cell.regionId) {
@@ -206,13 +244,12 @@ async function placeCliff(grid, cliffs) {
     const seedKey = pairKey(seedPair.regionA, seedPair.regionB);
     const boundaryPairs = pairs.filter(p => pairKey(p.regionA, p.regionB) === seedKey);
 
-    const segments = boundaryPairs.map(p => sharedEdgeCorners(p.a, p.b));
+    const segments = boundaryPairs.map(p => sharedEdgeCorners(grid, p.a, p.b));
     const touching = new Map();
     segments.forEach((seg, i) => {
         for (const corner of seg) {
-            const key = cellKey(corner.x, corner.y);
-            if (!touching.has(key)) touching.set(key, []);
-            touching.get(key).push(i);
+            if (!touching.has(corner.key)) touching.set(corner.key, []);
+            touching.get(corner.key).push(i);
         }
     });
 
@@ -221,8 +258,12 @@ async function placeCliff(grid, cliffs) {
     const before = walkBoundaryChain(segments, touching, cornerA, seedIndex).reverse();
     const after = walkBoundaryChain(segments, touching, cornerB, seedIndex);
     const points = [...before, cornerA, cornerB, ...after];
+    // `key` is an internal identity for the topological walk above — strip it from the final
+    // path so a square cliff's points stay the plain `{x,y}` shape geography-scene.mjs (and
+    // every existing test) already expects.
+    const path = points.map(({ key, ...point }) => point);
 
-    const cliff = { id: cliffs.length + 1, path: points };
+    const cliff = { id: cliffs.length + 1, path };
     cliffs.push(cliff);
     return cliff;
 }

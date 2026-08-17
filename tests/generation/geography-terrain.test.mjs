@@ -107,4 +107,36 @@ describe("placeTerrainRolls", () => {
         const { regions } = await placeTerrainRolls([terrainRoll("Plains", 100)], { width: 2, height: 2 });
         expect(regions[0].cells).toHaveLength(4);
     });
+
+    describe("hex grid (pointy-top, odd-row offset)", () => {
+        it("seeds the first Mountains from the border cell farthest from any Swamp under hex tile-step distance, not Euclidean", async () => {
+            // Swamp #1 -> (0,0) on a 5x5 grid, same seed roll as the square-grid equivalent
+            // test above. Under hex distance the farthest border cell from (0,0) is (4,3) —
+            // *not* (4,4), the square-grid answer — confirming the hex branch is actually
+            // driving this pick, not just falling through to Euclidean math.
+            globalThis.__rollQueue = [1];
+            const { regions } = await placeTerrainRolls(
+                [terrainRoll("Swamps"), terrainRoll("Mountains")],
+                { width: 5, height: 5, type: "hex" },
+            );
+            expect(regions[0].cells).toEqual([{ x: 0, y: 0 }]);
+            expect(regions[1].cells).toEqual([{ x: 4, y: 3 }]);
+        });
+
+        it("seeds Hills from a random free cell adjacent to Mountains, using the grid's 6-neighbor hex adjacency", async () => {
+            // Mountains #1 -> (0,0) on a 3x3 hex grid (1d8 border index 1, same convention as
+            // the square-grid equivalent test above). (0,0)'s only two in-bounds hex neighbors
+            // on a 3x3 grid are (1,0) and (0,1) (every other cube direction falls off the
+            // grid) — Hills' 1d2 roll of 1 picks the first, (1,0).
+            globalThis.__rollQueue = [1, 1];
+            const { regions } = await placeTerrainRolls(
+                [terrainRoll("Mountains"), terrainRoll("Hills")],
+                { width: 3, height: 3, type: "hex" },
+            );
+            expect(regions[0].type).toBe("Mountains");
+            expect(regions[0].cells).toEqual([{ x: 0, y: 0 }]);
+            expect(regions[1].type).toBe("Hills");
+            expect(regions[1].cells).toEqual([{ x: 1, y: 0 }]);
+        });
+    });
 });

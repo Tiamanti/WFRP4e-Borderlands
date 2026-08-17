@@ -39,7 +39,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Hazards** (final phase): Tables 4-1..4-12 rolls behind a GM-chosen Few/Moderate/Many lair
   count; four monster-type branches (Chaos/Greenskin/Monster/Undead); one journal page per
   lair; no scene placement.
-- **Settings**: Default Map Size, Ban Large Geography Regions, and Generate Names (Appendix I
-  place names for settlements, biased toward the owning prince's cultural style).
+- **Settings**: Default Map Size, Ban Large Geography Regions, Default Grid Shape, and Generate
+  Names (Appendix I place names for settlements, biased toward the owning prince's cultural
+  style).
+- **Hex grid support**: a new Default Grid Shape setting (Square/Hex, world-scope) lets a
+  Geography Scene use hexagonal tiles (pointy-top, odd-row offset) instead of squares — every
+  placement rule (terrain blobs, rivers, cliffs, special features) and Ancient Ruins' Note
+  placement now works for either, addressing cells by the same coordinates regardless of shape.
 
 See `docs/DECISIONS.md` for the design rationale behind each of the above.
