@@ -13,7 +13,8 @@ import { GEOGRAPHY_TABLE, SPECIAL_FEATURES_TABLE } from "../tables/geography.mjs
 import { placeTerrainRolls } from "./geography-terrain.mjs";
 import { placeRivers } from "./geography-rivers.mjs";
 import { placeIsolatedMountains, placeSpecialFeatures } from "./geography-features.mjs";
-import { createGeographyScene, paintGrid, paintRivers, paintCliffs } from "./geography-scene.mjs";
+import { hexBorderFillers } from "./geography-border.mjs";
+import { createGeographyScene, paintGrid, paintHexBorderFillers, paintRivers, paintCliffs } from "./geography-scene.mjs";
 import { createGeographyJournal } from "./geography-journal.mjs";
 import { postGeographySummary } from "./geography-chat.mjs";
 import { MODULE_ID, SETTINGS } from "../settings.mjs";
@@ -138,9 +139,14 @@ export async function generateGeography(region) {
     const { rivers } = await placeRivers(riverRolls, grid, regions);
     const remainingSpecialRolls = specialRolls.filter(roll => roll.feature !== "Isolated Mountain");
     const { cliffs } = await placeSpecialFeatures(remainingSpecialRolls, grid, regions, rivers);
+    // Computed last, once every terrain/river/feature roll has landed — which color each of a
+    // hex grid's blank boundary slivers should be (no-op, `[]`, on a square grid; see
+    // geography-border.mjs).
+    const hexFillers = await hexBorderFillers(grid, rivers);
 
     const scene = await createGeographyScene(region, { width, height, gridShape });
     await paintGrid(scene, grid);
+    await paintHexBorderFillers(scene, grid, hexFillers);
     await paintRivers(scene, rivers);
     await paintCliffs(scene, cliffs);
 

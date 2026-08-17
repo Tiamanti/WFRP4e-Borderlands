@@ -3,7 +3,7 @@
 // geography-terrain.mjs/geography-rivers.mjs/geography-features.mjs so those stay
 // unit-testable without a real Foundry environment.
 
-import { FEATURE_COLORS, VEGETATION_OPACITY, DEFAULT_VEGETATION_OPACITY } from "../tables/geography.mjs";
+import { FEATURE_COLORS, VEGETATION_OPACITY, DEFAULT_VEGETATION_OPACITY, RIVER_COLOR, RIVER_FILL_ALPHA } from "../tables/geography.mjs";
 import { offsetToCube, cubeToOffset } from "./geography-grid.mjs";
 
 /**
@@ -160,6 +160,133 @@ export async function paintGrid(scene, grid) {
 }
 
 /**
+ * Sutherland-Hodgman clip of a convex polygon (a real hex's vertices always are) against a
+ * single vertical half-plane — `keepGreaterEqual: true` keeps the part with `x >= boundaryX`
+ * (a left-edge filler's sliver, everything at/right of the Scene's `x = 0` edge), `false` keeps
+ * `x <= boundaryX` (a right-edge filler's sliver, everything at/left of the Scene's own right
+ * edge). Inserts an exact edge-intersection point wherever the polygon crosses the boundary, so
+ * the clipped result still shares a real edge with the Scene boundary and with its one true
+ * neighbor hex — no gap, no overlap.
+ */
+function clipToHalfPlane(points, boundaryX, keepGreaterEqual) {
+    const keep = keepGreaterEqual ? p => p.x >= boundaryX : p => p.x <= boundaryX;
+    const result = [];
+    for (let i = 0; i < points.length; i++) {
+        const curr = points[i];
+        const prev = points[(i - 1 + points.length) % points.length];
+        const currIn = keep(curr), prevIn = keep(prev);
+        if (currIn !== prevIn) {
+            const t = (boundaryX - prev.x) / (curr.x - prev.x);
+            result.push({ x: boundaryX, y: prev.y + t * (curr.y - prev.y) });
+        }
+        if (currIn) result.push(curr);
+    }
+    return result;
+}
+
+/** Pixel-space vertex equality, within float slop — used to find the one vertex two adjacent hexes' vertex lists share. */
+function samePoint(a, b) {
+    return Math.abs(a.x - b.x) < 0.01 && Math.abs(a.y - b.y) < 0.01;
+}
+
+/** The vertex of `points` with the smallest (`wantMin: true`) or largest y — a hex's own top peak or bottom trough. */
+function extremeVertex(points, wantMin) {
+    return points.reduce((best, p) => (!best || (wantMin ? p.y < best.y : p.y > best.y)) ? p : best, null);
+}
+
+/** Of the (exactly 2, for two genuinely-adjacent hexes) vertices `a` and `b`'s own vertex lists have in common — their one shared edge's two endpoints — the one with the larger (`preferLarger: true`) or smaller y: pass `false` (smaller y, nearer the peaks) for a top-edge notch, `true` (larger y, nearer the troughs) for a bottom-edge notch, so the returned point stays close to the flat Scene edge instead of the shared edge's *other* endpoint, off toward the hexes' own far side. */
+function sharedVertex(a, b, preferLarger) {
+    let best = null;
+    for (const pa of a) {
+        for (const pb of b) {
+            if (!samePoint(pa, pb)) continue;
+            if (!best || (preferLarger ? pa.y > best.y : pa.y < best.y)) best = pa;
+        }
+    }
+    return best;
+}
+
+/**
+ * Pixel geometry for one `kind: "column"` filler (see geography-border.mjs's hexBorderFillers):
+ * Foundry's raw *virtual* hex one column past the row's real edge (`j: 0` for a left/even-row
+ * filler, `j: grid.width` for a right/odd-row filler — deliberately not run through
+ * `hexColumnOf`, since these are exactly the raw columns real cells never use), clipped down to
+ * just the part that actually falls inside the Scene's own bounds (`scene.width` — already the
+ * true measured extent, see `hexPixelExtent`) via `clipToHalfPlane`; the rest of that virtual
+ * hex lands off-canvas. Returns `null` for a degenerate (<3-point) clip.
+ */
+function columnFillerPoints(scene, grid, side, y) {
+    const column = side === "left" ? 0 : grid.width;
+    const vertices = scene.grid.getVertices({ i: y, j: column });
+    const clipped = side === "left"
+        ? clipToHalfPlane(vertices, 0, true)
+        : clipToHalfPlane(vertices, scene.width, false);
+    return clipped.length >= 3 ? clipped : null;
+}
+
+/**
+ * Pixel geometry for one `kind: "notch"` filler: the small triangular gap between two adjacent
+ * same-row cells' peaks (top row) or troughs (bottom row) and the flat Scene edge they only
+ * touch at a single point each — bounded by each hex's own extreme vertex plus the one vertex
+ * they share (their real shared edge's row-center-ward endpoint), built entirely from the two
+ * real cells' own vertex lists (`hexColumnOf`, same as every other real-cell lookup — no
+ * virtual row needed). Returns `null` if the two cells don't turn out to share a vertex (not
+ * expected for genuinely-adjacent cells, but a small grid could ask for `x + 1 >= grid.width`
+ * indirectly through bad data — defensive, not load-bearing).
+ */
+function notchFillerPoints(scene, grid, edge, x, y) {
+    const va = scene.grid.getVertices({ i: y, j: hexColumnOf(x, y) });
+    const vb = scene.grid.getVertices({ i: y, j: hexColumnOf(x + 1, y) });
+    const wantMin = edge === "top"; // top notch: peaks (min y); bottom: troughs (max y)
+    const extremeA = extremeVertex(va, wantMin);
+    const extremeB = extremeVertex(vb, wantMin);
+    // Two adjacent same-row hexes share a full vertical-ish edge (2 vertices, one nearer each
+    // hex's own peak, one nearer its own trough) — the notch only needs the one *nearer the
+    // peaks* for a top edge (smaller y: `preferLarger: false`) or *nearer the troughs* for a
+    // bottom edge (larger y: `preferLarger: true`). Picking the wrong one of the two (an
+    // earlier version passed `wantMin` straight through here) drags the triangle all the way
+    // down to the far side of the shared edge — live-tested: it visibly reached into the far
+    // half of each hex instead of staying a small gap-sized sliver near the flat Scene edge.
+    const shared = sharedVertex(va, vb, !wantMin);
+    if (!extremeA || !extremeB || !shared) return null;
+    return [extremeA, shared, extremeB];
+}
+
+/**
+ * One filler Drawing per hex border sliver (see geography-border.mjs's hexBorderFillers for
+ * why these slivers exist and what color/opacity each gets — this function only turns that
+ * data into real pixel geometry, dispatching on `kind`). Unlabeled (blank `text`), same stroke
+ * styling as `paintGrid`'s normal cells so a filler reads as a seamless continuation of its
+ * real neighbor(s) rather than its own patch. No-ops on a square Scene (`hexBorderFillers`
+ * already returns `[]` for a square grid, so `fillers` is empty) or once a given filler's
+ * geometry comes out degenerate, skipped per-filler rather than failing the whole batch.
+ */
+export async function paintHexBorderFillers(scene, grid, fillers) {
+    const drawings = [];
+    for (const filler of fillers) {
+        const points = filler.kind === "column"
+            ? columnFillerPoints(scene, grid, filler.side, filler.y)
+            : notchFillerPoints(scene, grid, filler.edge, filler.x, filler.y);
+        if (!points) continue;
+        const { x, y: sy, width, height, points: shapePoints } = pathToShape(points, p => p);
+        drawings.push({
+            x, y: sy,
+            shape: { type: "p", width, height, points: shapePoints },
+            text: "",
+            fillType: CONST.DRAWING_FILL_TYPES.SOLID,
+            fillColor: filler.fillColor,
+            fillAlpha: filler.fillAlpha,
+            strokeColor: "#000000",
+            strokeWidth: 2,
+            strokeAlpha: 0.5,
+            flags: { "wfrp4e-borderlands": { feature: "HexBorderFiller" } },
+        });
+    }
+    if (drawings.length === 0) return [];
+    return scene.createEmbeddedDocuments("Drawing", drawings);
+}
+
+/**
  * Real pixel point for one river path point on a hex Scene. An integer-coordinate point is a
  * real path cell — its true hex center (`getCenterPoint`). A fractional point (a
  * `borderExitPoint`/`swampTouchPoint` extension, each axis offset by up to +-0.5 — see
@@ -195,7 +322,7 @@ export async function paintRivers(scene, rivers) {
             return {
                 x, y,
                 shape: { type: "p", width, height, points },
-                strokeColor: "#2196f3", strokeWidth: 8, strokeAlpha: 0.9,
+                strokeColor: RIVER_COLOR, strokeWidth: 8, strokeAlpha: RIVER_FILL_ALPHA,
                 // Smooths the freehand polyline into a curve — rivers wander, so a fully
                 // smoothed line reads more naturally than the raw jagged step-by-step path.
                 bezierFactor: 1,

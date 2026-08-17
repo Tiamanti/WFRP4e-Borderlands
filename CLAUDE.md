@@ -13,11 +13,11 @@ npm test         # vitest unit tests (Node, stubs in tests/setup.mjs)
 ## Status
 
 All six SPECS.md phases are implemented and committed. Ancient Ruins through Settlements are
-manually verified in a live Foundry world; Hazards, the 4 settings, and the redesigned
-region-aware Geography phase (below) are implemented and committed but not yet confirmed
-working in-game — check before relying on them. Hex grid support specifically (Default Grid
-Shape setting) is implemented and unit-tested but has **never been run against a live Foundry
-world at all** — check that first if you're about to rely on it. See `docs/DECISIONS.md` for
+manually verified in a live Foundry world; Hazards and the 4 settings are implemented and
+committed but not yet confirmed working in-game — check before relying on them. The redesigned
+region-aware Geography phase, including hex grid support (Default Grid Shape setting) and the
+hex-only border-filler pass that squares off a hex Scene's rectangular boundary, has been
+live-tested in a real Foundry world and confirmed working. See `docs/DECISIONS.md` for
 the "why" behind every non-obvious call below, and `PLAN.md` for the full narrative if
 `docs/DECISIONS.md` isn't enough detail.
 

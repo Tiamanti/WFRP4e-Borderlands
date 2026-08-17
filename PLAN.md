@@ -1868,7 +1868,24 @@ Cliff's pure logical cube corners round-tripped offset→`hexColumnOf`→cube fi
 wider" sizing falls out of the live grid's own vertex geometry rather than being hand-computed.
 See docs/DECISIONS.md's "Hex grid support" for the full write-up. 229 tests still passing
 (`geography-scene.mjs`/`ruins-scene.mjs` aren't unit-tested, per convention), production build
-clean; awaiting the next live-testing round.
+clean; live-tested and confirmed working ("Excelent works well.") — committed.
+
+**Fifth live-testing round**: with `hexColumnOf` fixed, a hex Scene's rectangular boundary
+still left visibly blank slivers where the offset tiling didn't quite reach the flat edges —
+the "jagged border" a hex grid gets when squared off into a rectangle. First attempt
+(`smoothBorderCells`) misdiagnosed this as the full border *cells'* own color/label needing to
+blend into their neighbors; live-tested (by description, before a build was even needed) as
+addressing the wrong thing entirely — the cells themselves were never blank, the *gaps between*
+them were. Replaced with `geography-border.mjs`'s `hexBorderFillers` (pure: decides which
+slivers exist and their color/opacity) plus `geography-scene.mjs`'s `paintHexBorderFillers`
+(the pixel geometry): column slivers left/right (a virtual off-grid hex clipped to the Scene's
+real bounds) and notch slivers top/bottom (small triangles between adjacent same-row cells,
+built from their own real vertex lists). Two more corrections after that: the notch triangles
+initially used a flat default opacity instead of the bordering cell's real vegetation-based
+`fillAlpha`; and the notch triangles were initially "too tall," reaching into the far half of
+each hex — traced to `sharedVertex` picking the wrong one of a shared edge's two endpoints
+(fixed by flipping which endpoint it prefers for a top vs. bottom notch). 237 tests passing,
+production build clean; live-tested and confirmed working ("Good.") — committed.
 
 ## Not in scope for this plan (future sessions)
 

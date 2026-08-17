@@ -172,6 +172,12 @@ export const FEATURE_COLORS = {
     Whirlpool: "#01579b",
 };
 
+/** River stroke color — `geography-scene.mjs`'s paintRivers, and `geography-border.mjs`'s hex border-filler coloring (a boundary sliver/notch a river genuinely exits through takes this instead of a neighbor-majority terrain color) — share this one constant so they can't drift apart. */
+export const RIVER_COLOR = "#2196f3";
+
+/** Opacity a river-colored hex border filler (see `geography-border.mjs`) uses, matching `paintRivers`' own line `strokeAlpha` so a filler capping a river's exit reads as the same visual weight as the river line itself. */
+export const RIVER_FILL_ALPHA = 0.9;
+
 export const VEGETATION_DESCRIPTIONS = {
     Barren: "Almost nothing grows — bare rock, poisoned soil, or true desert. Poor for settlement.",
     Grassy: "Open ground with little beyond grasses; good pastoral land, and the easiest terrain to farm.",

@@ -46,5 +46,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Geography Scene use hexagonal tiles (pointy-top, odd-row offset) instead of squares — every
   placement rule (terrain blobs, rivers, cliffs, special features) and Ancient Ruins' Note
   placement now works for either, addressing cells by the same coordinates regardless of shape.
+  A hex Scene's own rectangular boundary previously left blank, unpainted slivers where the
+  offset hex tiling didn't quite reach it (a half-hex column gap on alternating rows at the
+  left/right edges, and small triangular notches between adjacent cells at the top/bottom
+  edges) — these are now filled with the color/opacity of whichever real cell(s) border them
+  (or the river's own color, if a river genuinely exits the map right there).
 
 See `docs/DECISIONS.md` for the design rationale behind each of the above.

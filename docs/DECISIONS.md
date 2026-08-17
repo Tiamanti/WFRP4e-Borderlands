@@ -354,6 +354,32 @@ work for either. See PLAN.md's "Hex grid support" section for the full plan.
   shifted columns rather than `0..width-1`, so the Scene comes out correctly wider (about half
   a tile, from even rows needing one extra column of run-up room) — the exact amount falls out
   of the live grid's own vertex geometry rather than being hand-computed as a fraction.
+- **A hex Scene's rectangular boundary still leaves blank slivers even with `hexColumnOf`
+  correct** — `geography-border.mjs`'s `hexBorderFillers` (computed last, after every other
+  placement step) plus `geography-scene.mjs`'s `paintHexBorderFillers` paint them. Two distinct
+  kinds, both live-tested: **column slivers** (left edge on every even row, right edge on every
+  odd row — the raw column `hexColumnOf` never uses for a real cell on that row, e.g. raw
+  column 0 on an even row) are filled by taking the *virtual* off-grid hex one column past the
+  row's edge (`scene.grid.getVertices({i, j: 0})` or `{j: grid.width}` — deliberately not
+  routed through `hexColumnOf`, since these are exactly the columns it never produces) and
+  clipping it to the Scene's real bounds with a single vertical half-plane clip
+  (Sutherland-Hodgman). **Notch slivers** (small triangles between every adjacent same-row cell
+  pair on row 0 and the last row, where two hexes' peaks/troughs only touch the flat Scene edge
+  at one point each) are built entirely from the two real cells' own vertex lists — each hex's
+  own extreme (min-y peak for a top notch, max-y trough for bottom) vertex, plus the one vertex
+  the pair's vertex lists have in common (their shared edge's *near* endpoint — an early version
+  picked the shared edge's *other* endpoint instead, which live-tested as the triangle reaching
+  visibly into the far half of each hex; fixed by flipping which of the two matching vertices
+  `sharedVertex` prefers). Both kinds are colored from their real bordering cell(s)' terrain
+  (majority of exactly 2 for a notch, randomly tie-broken; always exactly 1 for a column
+  sliver) with that cell's own vegetation `fillAlpha` (matching `paintGrid`'s per-cell opacity
+  exactly, not a flat default — an initial version used a flat default and had to be corrected),
+  or `RIVER_COLOR`/`RIVER_FILL_ALPHA` if a bordering cell is a genuine river exit
+  (`isBorderCell` covers all 4 edges, so this applies to top/bottom exits too, not just
+  left/right). An earlier attempt at this whole feature recolored/unlabeled the full border
+  *cells* themselves instead of filling the actual blank slivers — live-tested as a complete
+  no-op, since the cells were never the problem; replaced entirely by the sliver-filling
+  approach above.
 
 ## Ancient Ruins
 
